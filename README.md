@@ -12,7 +12,7 @@ Credits: [CREDITS.md](CREDITS.md) · License: [LICENSE.md](LICENSE.md) (GPL-2.0 
 | 5.10 (Android GKI) | Samsung stock kernel ([opensource.samsung.com](https://opensource.samsung.com)) | Android only, not mainline |
 | 6.16-rc1 | Ghatto404 / Arthurus36 ([Nura wiki](https://wiki.nura.eco/wiki/Samsung_Galaxy_S22_5G_(samsung-r0q))) | Wiki lists Wi-Fi as working; source tree not public (Arthurus36's public repo has a decompiled stock DT only) |
 | 7.2.11 (upstream) | Mainline `arch/arm64/boot/dts/qcom/sm8450-samsung-r0q.dts` | Minimal: framebuffer, regulators, USB 2.0. No panel, touch, Wi-Fi, GPU or battery |
-| **7.2.11 (this repo)** | This port | Wi-Fi 5 GHz, Bluetooth, 120 Hz panel, touch, GPU, stereo speakers, mics, USB-C hotplug, MTP, buttons, charging, modem boot |
+| **7.2.11 (this repo)** | This port | Wi-Fi 5 GHz, Bluetooth, 120 Hz panel, touch, GPU, stereo speakers, mics, USB-C hotplug, MTP, buttons, charging, modem boot, **all 4 cameras (IMX374 front, S5K3K1 3x tele, IMX563 ultrawide, S5KGN3 main wide — D-PHY + 3-phase C-PHY RAW10)** |
 
 To my knowledge this is the newest working mainline kernel on the r0q, and the most complete public one,
 as of 2026-10-18. Know of a newer or more complete one? Please open an issue.
@@ -29,10 +29,11 @@ Australian XSA, One UI 7, bootloader unlocked) from the phone's own storage. And
 | Works | Partly | Not yet |
 |---|---|---|
 | Boot via uniLoader, UFS, USB networking + SSH | 2.4 GHz Wi-Fi association (5 GHz works) | Calls/SMS, mobile data (no sm8450 IPA in mainline) |
-| **Wi-Fi** 5 GHz, Wi-Fi 6 2x2, 960 Mbit/s, autoconnects at boot | **Modem**: boots, QMI online; no SIM test yet | Sleep/suspend, sensors, cameras, fingerprint, NFC |
+| **Wi-Fi** 5 GHz, Wi-Fi 6 2x2, 960 Mbit/s, autoconnects at boot | **Modem**: boots, QMI online; no SIM test yet | Sleep/suspend, sensors, fingerprint, NFC |
 | **Audio: stereo speakers (2x CS35L41) + 2 mics**, Speaker/Mic in Plasma | **USB OTG: USB stick detected in Dolphin; ISO/exFAT sticks need kernel support** | **NPU userspace (CDSP firmware runs, attempt 29)**, speaker protection |
 | **USB-C hotplug** (MAX77705, attempt 28) + **MTP file transfer to PC** | On-screen keyboard (no auto-hide) | Writable RTC |
 | **Display 120 Hz** (new mainline S6E3FAC panel driver) | **Vulkan (Turnip) on Adreno 730** | |
+| **All 4 cameras (CAMSS D-PHY + 3-phase C-PHY RAW10)**: IMX374 front, S5K3K1 3x tele, IMX563 ultrawide, S5KGN3 main wide | | |
 | Touch (STM FTS2BA61Y, multitouch), GPU (Adreno 730) | | |
 | Bluetooth (address from EFS), battery %, charging | | |
 | **6.8 GiB RAM**, firewall (nftables) | | |

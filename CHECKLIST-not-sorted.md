@@ -28,7 +28,8 @@
 - [ ] **Brightness control in the UI** (backlight exists; slider untested), auto-brightness
 - [ ] **Sensors**: auto-rotate (accelerometer/gyro), proximity, ambient light
 - [ ] **Vibration / haptics** (max77705 haptic not bound)
-- [ ] **Cameras**, flash
+- [x] **Cameras (all 4 sensors streaming RAW10 via CAMSS D-PHY & 3-phase C-PHY)**: front **Sony IMX374** (`1616x912` & `3648x2736`), tele **Samsung S5K3K1** (`3648x2736` & `1824x1368`), ultrawide **Sony IMX563** (`4032x3024` & `2016x1512`), and main wide **Samsung S5KGN3** (`4080x3060` & `2040x1532`)
+- [ ] Camera LED flash
 - [ ] **Fingerprint** reader
 - [ ] **NFC**
 - [ ] **USB-C**: host/OTG (driver + OTG VBUS in place since attempt 23, untested), PD, DisplayPort out, USB3 (currently USB2 peripheral only)

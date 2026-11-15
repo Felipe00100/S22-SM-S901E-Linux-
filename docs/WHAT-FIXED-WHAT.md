@@ -54,16 +54,17 @@ From flashing uniLoader up to attempt 39 (2026-10-20). Kernel 7.2.11, postmarket
 | 41 | No camera subsystem | SM8450 CAMSS + camcc fixes, &camss/&cci0/&cci1 (attempt 35) | Tab S8+ |
 | 42 | Camera rails unreachable | S2MPB02 camera PMIC regulator driver on i2c-gpio 175/176 (attempt 36) | Samsung kernel (GPL driver, wiring) + Ours |
 | 43 | No sensor settings | Vendor partition read via F2FS (with compression) module; CamX Chromatix decoder (tools/camx-chromatix-dump.py) | Ours |
+| 44 | Front camera (`IMX374`) CCI1 bus SDA/SCL held low (I2C timeouts) & missing rear camera rails/drivers | Expand `s2mpb02-regulator` to all 21 regulators (`LDO1-18`, `BUCK1`, `BUCK2` 1.3 V, `BUCK_BOOST` 3.3 V) and keep shared I/O & sub-PMIC rails (`buck2`, `bb`, `ldo6`, `ldo7`, `ldo9`) always-on per stock DTBO (`s2mpb02_pmic@59`), releasing the CCI pull-ups; enable `&gpi_dma2` + `&i2c16` (1 MHz) + `gpio83` (`CAM_WIDE_LONG_EXPOSURE` low) and add V4L2 drivers for `imx374`, `s5k3k1`, `imx563`, and `s5kgn3` | Stock DTBO (`fragment@68`/`104`) + CamX sensormodules + Ours |
+| 45 | Ultrawide (`IMX563`) & Main Wide (`S5KGN3`) use 3-trio MIPI C-PHY (rejected by mainline SM8450 CAMSS) | Add 3-phase C-PHY support (`MEDIA_BUS_TYPE_CSI2_CPHY`, `CSI2_RX_CFG0_PHY_TYPE_SEL = 1`, SM8450 5nm 3PH Trio0/1/2 lane config, 1.50-3.30 GSpS rate delta table, and 400 MHz `csiphy_timer` frequency clamp) in `local-sm8450-camss-cphy.patch` | Downstream `csiphy_v2_0_1_3ph` + Ours |
 
 ## Not fixed yet
 - 2.4 GHz Wi-Fi association times out (5 GHz works)
 - Speaker protection firmware (volume kept moderate)
 - Suspend/resume (blocked), keyboard auto-hide
-- Front camera (IMX374): driver written, CCI bus held low (timeouts); rear camera drivers not written
 - Unused clocks/power domains kept on (clk_ignore_unused); removing them broke the display probe (attempt 40, reverted)
 - NPU compute runtime (needs Qualcomm SDK); NPU first-call race
 - Modem: no SIM tested, ModemManager doesn't list it; no mobile data (no sm8450 IPA)
-- Sensors, cameras, fingerprint, NFC, vibration, writable RTC
+- Sensors, fingerprint, NFC, vibration, writable RTC
 
 ## Rules kept throughout
 - Never write the EFS partitions (efs, sec_efs, persist, modemst1/2, fsg, fsc)

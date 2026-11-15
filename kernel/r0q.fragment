@@ -72,3 +72,9 @@ CONFIG_ZRAM_BACKEND_LZ4=y
 # Attempt 11: touchscreen (upstream fts2ba61y patch) on spi-gpio
 CONFIG_SPI_GPIO=m
 CONFIG_TOUCHSCREEN_FTS2BA61Y=m
+
+# Camera sensors (S22 front + triple rear)
+CONFIG_VIDEO_IMX374=m
+CONFIG_VIDEO_IMX563=m
+CONFIG_VIDEO_S5K3K1=m
+CONFIG_VIDEO_S5KGN3=m

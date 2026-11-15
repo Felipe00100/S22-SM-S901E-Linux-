@@ -24,7 +24,8 @@ Updated 2026-10-20 · attempt 39 · kernel 7.2.11 (#21)
 - [x] NPU: FastRPC calculator test passes on the CDSP, unsigned PD (~4/6; normal channel + cdsprpcd service, survives reboot)
 - [x] **Vulkan (Turnip) on Adreno 730**
 - [x] **Camera subsystem (CAMSS)**: 6 CSIPHY, 5 CSID, 5 VFE, 17 video nodes, 4 CCI buses (Tab S8+ patches, attempt 35)
-- [x] **Camera power PMIC (S2MPB02)**: LDO regulator driver, front camera rails at stock voltages (attempt 36)
+- [x] **Camera power PMIC (S2MPB02)**: 21 regulators (LDO1-18, BUCK1, BUCK2 1.3 V, BUCK_BOOST 3.3 V) with stock shared I/O & sub-PMIC supply rails enabled (attempt 36 + full bring-up)
+- [x] **All 4 cameras (front + triple rear, CAMSS D-PHY & 3-phase C-PHY RAW10)**: front **Sony IMX374** (`cci1_i2c1 @ 0x10`, `CSIPHY4` 4-lane D-PHY, `1616x912` & `3648x2736`), 3x tele **Samsung S5K3K1** (`cci0_i2c1 @ 0x2d`, `CSIPHY0` 4-lane D-PHY, `3648x2736` & `1824x1368`), ultrawide **Sony IMX563** (`cci0_i2c0 @ 0x10`, `CSIPHY2` 3-trio C-PHY, `4032x3024` & `2016x1512`), and 50MP main wide **Samsung S5KGN3** (`i2c16 @ 0x10` + `gpi_dma2`, `CSIPHY1` 3-trio C-PHY, `4080x3060` & `2040x1532`)
 - [x] **Vibration**: CS40L26 driver (ROM effects, medium strength), works with Plasma/feedbackd (attempt 34)
 - [x] Brightness slider, with a minimum (DBV 6) so it never goes fully black
 - [x] **Memory bandwidth voting**: CPU + DDR bwmon and GPU votes from stock tables; memory bus idles at its lowest step instead of max (attempts 31-32)
@@ -47,8 +48,6 @@ Updated 2026-10-20 · attempt 39 · kernel 7.2.11 (#21)
 - [ ] Speaker protection firmware (louder volume)
 - [ ] Sensors (rotate, proximity, light)
 - [ ] Vibration: full CS40L26 driver with Samsung firmware + calibration (stronger, custom waveforms)
-- [ ] Front camera IMX374: driver written (1616x912 RAW10 @ 30 fps), rails/MCLK/reset/power domain all verified, but CCI bus SDA/SCL held low (timeouts). Next: read the bus on stock Android
-- [ ] Rear cameras: S5KGN3 main (QUP i2c@884000), IMX563 ultrawide (CCI0 m0), S5K3K1 tele (CCI0 m1): no mainline drivers
 - [ ] Fingerprint (Qualcomm 3D Sonic QBT2000, TrustZone-only: unlikely)
 - [ ] NFC
 - [ ] DisplayPort out

@@ -38,6 +38,7 @@ Wi-Fi is the one big item still open. Even the failed Wi-Fi attempts are useful:
 | 10-18 | 26 | VA macro + DMICs (LPI 6/7, 8/9, 12/13), L12C | **microphones work** |
 | 10-18 | 27 | gpio-keys: volume up on pm8350 gpio6 | **volume up works** |
 | 10-18 | - | Samsung Wi-Fi fw + board file (really loaded) + regdb + ath11k cold boot calibration | **Wi-Fi CONNECTS (5 GHz, 960 Mbit/s link)** |
+| 11-14 | - | Expand `s2mpb02-regulator` (21 rails + always-on shared I/O supplies), add SM8450 CAMSS 3-phase C-PHY support (`local-sm8450-camss-cphy.patch`), wire `&gpi_dma2` + `&i2c16` + `gpio83`, add V4L2 drivers (`imx374`, `s5k3k1`, `imx563`, `s5kgn3`) and CamX register extractor | **All 4 cameras streaming RAW10 (D-PHY + C-PHY)** |
 
 ## Added to the repo
 
@@ -63,5 +64,5 @@ Wi-Fi is the one big item still open. Even the failed Wi-Fi attempts are useful:
 
 ## Still open
 
-Wi-Fi (details in README), audio, cellular modem, sleep/suspend, sensors, cameras, NFC, cable detection. See
+Wi-Fi (details in README), audio, cellular modem, sleep/suspend, sensors, NFC, cable detection. See
 [CHECKLIST-not-sorted.md](CHECKLIST-not-sorted.md).
