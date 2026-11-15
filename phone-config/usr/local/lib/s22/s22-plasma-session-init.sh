@@ -80,4 +80,29 @@ if [ ! -f "$MARKER" ]; then
 	date > "$MARKER"
 fi
 
+# 3. Ensure Flatpak Brave does not stall reboot/Task Switcher with multi-tab close prompt
+BRAVE_PREFS="$HOME/.var/app/com.brave.Browser/config/BraveSoftware/Brave-Browser/Default/Preferences"
+if [ -f "$BRAVE_PREFS" ] && command -v python3 >/dev/null 2>&1 && ! pgrep -f '/[a]pp/brave/brave' >/dev/null 2>&1; then
+	python3 - "$BRAVE_PREFS" <<'PYEOF' >/dev/null 2>&1 || true
+import json, os, sys
+p = sys.argv[1]
+with open(p, "r", encoding="utf-8") as f:
+    d = json.load(f)
+changed = False
+brave = d.setdefault("brave", {})
+if brave.get("enable_window_closing_confirm") is not False:
+    brave["enable_window_closing_confirm"] = False
+    changed = True
+bg = d.setdefault("background_mode", {})
+if bg.get("enabled") is not False:
+    bg["enabled"] = False
+    changed = True
+if changed:
+    tmp = p + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(d, f)
+    os.replace(tmp, p)
+PYEOF
+fi
+
 exit 0
