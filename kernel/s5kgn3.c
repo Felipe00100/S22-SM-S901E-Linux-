@@ -270,13 +270,14 @@ static const struct v4l2_ctrl_ops s5kgn3_ctrl_ops = {
 static int s5kgn3_init_controls(struct s5kgn3 *s5kgn3)
 {
 	struct v4l2_ctrl_handler *hdlr = &s5kgn3->ctrl_handler;
+	struct v4l2_fwnode_device_properties props;
 	const struct s5kgn3_mode *mode = s5kgn3->cur_mode;
 	s64 hblank_def = mode->hts - mode->width;
 	s64 vblank_def = mode->vts_def - mode->height;
 	s64 exposure_max = mode->vts_def - S5KGN3_EXPOSURE_MARGIN;
 	int ret;
 
-	ret = v4l2_ctrl_handler_init(hdlr, 6);
+	ret = v4l2_ctrl_handler_init(hdlr, 8);
 	if (ret)
 		return ret;
 
@@ -308,12 +309,24 @@ static int s5kgn3_init_controls(struct s5kgn3 *s5kgn3)
 	s5kgn3->exposure = v4l2_ctrl_new_std(hdlr, &s5kgn3_ctrl_ops,
 					     V4L2_CID_EXPOSURE, S5KGN3_EXPOSURE_MIN,
 					     exposure_max, S5KGN3_EXPOSURE_STEP,
-					     exposure_max);
+					     min_t(s64, 1000, exposure_max));
 
 	s5kgn3->gain = v4l2_ctrl_new_std(hdlr, &s5kgn3_ctrl_ops,
 					 V4L2_CID_ANALOGUE_GAIN,
 					 S5KGN3_ANA_GAIN_MIN, S5KGN3_ANA_GAIN_MAX,
 					 S5KGN3_ANA_GAIN_STEP, S5KGN3_ANA_GAIN_DEFAULT);
+
+	ret = v4l2_fwnode_device_parse(s5kgn3->dev, &props);
+	if (ret) {
+		v4l2_ctrl_handler_free(hdlr);
+		return ret;
+	}
+
+	ret = v4l2_ctrl_new_fwnode_properties(hdlr, &s5kgn3_ctrl_ops, &props);
+	if (ret) {
+		v4l2_ctrl_handler_free(hdlr);
+		return ret;
+	}
 
 	if (hdlr->error) {
 		ret = hdlr->error;
@@ -398,6 +411,7 @@ static int s5kgn3_set_pad_format(struct v4l2_subdev *sd,
 		s64 hblank = mode->hts - mode->width;
 		s64 vblank = mode->vts_def - mode->height;
 		s64 exp_max = mode->vts_def - S5KGN3_EXPOSURE_MARGIN;
+		s64 exp_def = min_t(s64, 1000, exp_max);
 
 		s5kgn3->cur_mode = mode;
 		__v4l2_ctrl_s_ctrl(s5kgn3->link_freq, mode->link_freq_idx);
@@ -407,8 +421,8 @@ static int s5kgn3_set_pad_format(struct v4l2_subdev *sd,
 					 S5KGN3_VTS_MAX - mode->height, 1, vblank);
 		__v4l2_ctrl_s_ctrl(s5kgn3->vblank, vblank);
 		__v4l2_ctrl_modify_range(s5kgn3->exposure, S5KGN3_EXPOSURE_MIN,
-					 exp_max, S5KGN3_EXPOSURE_STEP, exp_max);
-		__v4l2_ctrl_s_ctrl(s5kgn3->exposure, exp_max);
+					 exp_max, S5KGN3_EXPOSURE_STEP, exp_def);
+		__v4l2_ctrl_s_ctrl(s5kgn3->exposure, exp_def);
 	}
 
 	return s5kgn3->ctrl_handler.error;

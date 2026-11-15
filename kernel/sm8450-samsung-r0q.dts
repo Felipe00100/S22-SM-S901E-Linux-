@@ -439,6 +439,13 @@
 			regulator-always-on;
 		};
 
+		/* Tele VAF / OIS 2.8 V (stock: pm8350c_l7) */
+		vreg_l7c_2p8: ldo7 {
+			regulator-min-microvolt = <2800000>;
+			regulator-max-microvolt = <2800000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+
 		vreg_l8c_1p8: ldo8 {
 			regulator-min-microvolt = <1800000>;
 			regulator-max-microvolt = <1800000>;
@@ -1435,12 +1442,14 @@
 					regulator-name = "s2mpb02-l10";
 					regulator-min-microvolt = <1800000>;
 					regulator-max-microvolt = <1800000>;
+					regulator-always-on;
 				};
 
 				vreg_s2mpb02_l11: ldo11 {
 					regulator-name = "s2mpb02-l11";
 					regulator-min-microvolt = <2800000>;
 					regulator-max-microvolt = <2800000>;
+					regulator-always-on;
 				};
 
 				vreg_cam_uw_vana: ldo12 {
@@ -1483,6 +1492,7 @@
 					regulator-name = "s2mpb02-l18";
 					regulator-min-microvolt = <3200000>;
 					regulator-max-microvolt = <3200000>;
+					regulator-always-on;
 				};
 
 				vreg_cam_wide_vdig: buck1 {
@@ -1588,6 +1598,24 @@
 			bias-disable;
 		};
 	};
+
+	cam_ois_default: cam-ois-default-state {
+		reset-pins {
+			pins = "gpio97";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+			output-high;
+		};
+
+		boot0-pins {
+			pins = "gpio99";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+			output-low;
+		};
+	};
 };
 
 /*
@@ -1665,7 +1693,7 @@
 		vio-supply = <&vreg_cam_uw_tele_vio>;
 
 		orientation = <1>;
-		rotation = <90>;
+		rotation = <270>;
 
 		port {
 			imx563_ep: endpoint {
@@ -1694,9 +1722,10 @@
 		vio-supply = <&vreg_cam_uw_tele_vio>;
 		vana-supply = <&vreg_cam_tele_vana>;
 		vdig-supply = <&vreg_cam_tele_vdig>;
+		lens-focus = <&vcm_tele>;
 
 		orientation = <1>;
-		rotation = <90>;
+		rotation = <270>;
 
 		port {
 			s5k3k1_ep: endpoint {
@@ -1711,6 +1740,15 @@
 
 &cci1 {
 	status = "okay";
+};
+
+&cci1_i2c0 {
+	vcm_wide: actuator@c {
+		compatible = "asahi-kasei,ak7377";
+		reg = <0x0c>;
+		vdd-supply = <&vreg_cam_wide_vaf>;
+		vio-supply = <&vreg_cam_wide_vio>;
+	};
 };
 
 &cci1_i2c1 {
@@ -1729,9 +1767,10 @@
 		vana-supply = <&vreg_cam_front_vana>;
 		vio-supply = <&vreg_cam_front_vio>;
 		vdig-supply = <&vreg_cam_front_vdig>;
+		lens-focus = <&vcm_front>;
 
 		orientation = <0>;
-		rotation = <270>;
+		rotation = <90>;
 
 		port {
 			imx374_ep: endpoint {
@@ -1744,7 +1783,54 @@
 	};
 };
 
+&gpi_dma0 {
+	status = "okay";
+};
+
+&gpi_dma1 {
+	status = "okay";
+};
+
 &gpi_dma2 {
+	status = "okay";
+};
+
+&qup_i2c2_data_clk {
+	drive-strength = <6>;
+};
+
+&qup_i2c12_data_clk {
+	drive-strength = <6>;
+};
+
+&i2c2 {
+	clock-frequency = <1000000>;
+	status = "okay";
+
+	vcm_front: actuator@c {
+		compatible = "dongwoon,dw9825a";
+		reg = <0x0c>;
+		vdd-supply = <&vreg_s2mpb02_l16>;
+		vio-supply = <&vreg_cam_front_vio>;
+	};
+};
+
+&i2c12 {
+	clock-frequency = <1000000>;
+	status = "okay";
+
+	vcm_tele: actuator@f {
+		compatible = "asahi-kasei,ak7377";
+		reg = <0x0f>;
+		vdd-supply = <&vreg_l7c_2p8>;
+		vio-supply = <&vreg_cam_uw_tele_vio>;
+	};
+};
+
+&i2c18 {
+	clock-frequency = <1000000>;
+	pinctrl-0 = <&qup_i2c18_data_clk &cam_ois_default>;
+	pinctrl-names = "default";
 	status = "okay";
 };
 
@@ -1768,9 +1854,10 @@
 		vio-supply = <&vreg_cam_wide_vio>;
 		vdig-supply = <&vreg_cam_wide_vdig>;
 		vcustom1-supply = <&vreg_cam_wide_vcustom1>;
+		lens-focus = <&vcm_wide>;
 
 		orientation = <1>;
-		rotation = <90>;
+		rotation = <270>;
 
 		port {
 			s5kgn3_ep: endpoint {

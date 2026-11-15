@@ -249,13 +249,14 @@ static const struct v4l2_ctrl_ops imx374_ctrl_ops = {
 static int imx374_init_controls(struct imx374 *imx374)
 {
 	struct v4l2_ctrl_handler *hdlr = &imx374->ctrl_handler;
+	struct v4l2_fwnode_device_properties props;
 	const struct imx374_mode *mode = imx374->cur_mode;
 	s64 hblank_def = mode->hts - mode->width;
 	s64 vblank_def = mode->vts_def - mode->height;
 	s64 exposure_max = mode->vts_def - IMX374_EXPOSURE_MARGIN;
 	int ret;
 
-	ret = v4l2_ctrl_handler_init(hdlr, 6);
+	ret = v4l2_ctrl_handler_init(hdlr, 8);
 	if (ret)
 		return ret;
 
@@ -287,12 +288,24 @@ static int imx374_init_controls(struct imx374 *imx374)
 	imx374->exposure = v4l2_ctrl_new_std(hdlr, &imx374_ctrl_ops,
 					     V4L2_CID_EXPOSURE, IMX374_EXPOSURE_MIN,
 					     exposure_max, IMX374_EXPOSURE_STEP,
-					     exposure_max);
+					     min_t(s64, 800, exposure_max));
 
 	imx374->gain = v4l2_ctrl_new_std(hdlr, &imx374_ctrl_ops,
 					 V4L2_CID_ANALOGUE_GAIN,
 					 IMX374_ANA_GAIN_MIN, IMX374_ANA_GAIN_MAX,
 					 IMX374_ANA_GAIN_STEP, IMX374_ANA_GAIN_DEFAULT);
+
+	ret = v4l2_fwnode_device_parse(imx374->dev, &props);
+	if (ret) {
+		v4l2_ctrl_handler_free(hdlr);
+		return ret;
+	}
+
+	ret = v4l2_ctrl_new_fwnode_properties(hdlr, &imx374_ctrl_ops, &props);
+	if (ret) {
+		v4l2_ctrl_handler_free(hdlr);
+		return ret;
+	}
 
 	if (hdlr->error) {
 		ret = hdlr->error;
@@ -307,7 +320,7 @@ static int imx374_init_controls(struct imx374 *imx374)
 static void imx374_fill_format(const struct imx374_mode *mode,
 			       struct v4l2_mbus_framefmt *fmt)
 {
-	fmt->code = MEDIA_BUS_FMT_SRGGB10_1X10;
+	fmt->code = MEDIA_BUS_FMT_SGBRG10_1X10;
 	fmt->width = mode->width;
 	fmt->height = mode->height;
 	fmt->field = V4L2_FIELD_NONE;
@@ -335,7 +348,7 @@ static int imx374_enum_mbus_code(struct v4l2_subdev *sd,
 	if (code->index > 0)
 		return -EINVAL;
 
-	code->code = MEDIA_BUS_FMT_SRGGB10_1X10;
+	code->code = MEDIA_BUS_FMT_SGBRG10_1X10;
 	return 0;
 }
 
@@ -344,7 +357,7 @@ static int imx374_enum_frame_size(struct v4l2_subdev *sd,
 				  struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(imx374_modes) ||
-	    fse->code != MEDIA_BUS_FMT_SRGGB10_1X10)
+	    fse->code != MEDIA_BUS_FMT_SGBRG10_1X10)
 		return -EINVAL;
 
 	fse->min_width = imx374_modes[fse->index].width;
@@ -377,6 +390,7 @@ static int imx374_set_pad_format(struct v4l2_subdev *sd,
 		s64 hblank = mode->hts - mode->width;
 		s64 vblank = mode->vts_def - mode->height;
 		s64 exp_max = mode->vts_def - IMX374_EXPOSURE_MARGIN;
+		s64 exp_def = min_t(s64, 800, exp_max);
 
 		imx374->cur_mode = mode;
 		__v4l2_ctrl_s_ctrl(imx374->link_freq, mode->link_freq_idx);
@@ -387,8 +401,8 @@ static int imx374_set_pad_format(struct v4l2_subdev *sd,
 					 IMX374_VTS_MAX - mode->height, 1, vblank);
 		__v4l2_ctrl_s_ctrl(imx374->vblank, vblank);
 		__v4l2_ctrl_modify_range(imx374->exposure, IMX374_EXPOSURE_MIN,
-					 exp_max, IMX374_EXPOSURE_STEP, exp_max);
-		__v4l2_ctrl_s_ctrl(imx374->exposure, exp_max);
+					 exp_max, IMX374_EXPOSURE_STEP, exp_def);
+		__v4l2_ctrl_s_ctrl(imx374->exposure, exp_def);
 	}
 
 	return imx374->ctrl_handler.error;
