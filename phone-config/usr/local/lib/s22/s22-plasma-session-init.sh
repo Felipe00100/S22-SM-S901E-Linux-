@@ -27,6 +27,9 @@ if command -v kwriteconfig6 >/dev/null 2>&1; then
 		kwriteconfig6 --file plasmamobilerc --group General --key gesturePanelEnabled false
 		kwriteconfig6 --file kwinrc --group Compositing --key Backend OpenGL
 	fi
+	if [ ! -f "$HOME/.config/plasmacamerarc" ]; then
+		kwriteconfig6 --file plasmacamerarc --group General --key cameraDeviceId "/base/soc@0/geniqup@8c0000/i2c@884000/camera@10"
+	fi
 fi
 
 if command -v qdbus6 >/dev/null 2>&1; then

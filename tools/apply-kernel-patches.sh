@@ -49,6 +49,7 @@ for p in \
 	"$U/local-dwc3-qcom-role-vbus-override.patch" \
 	"$U/local-max77705-typec-dp-altmode.patch" \
 	"$U/local-sm8450-ipa-v5.1.patch" \
+	"$U/local-ak7375-s22-vcm.patch" \
 	; do
 	echo "  $(basename "$p")"
 	patch -p1 --forward < "$p"
