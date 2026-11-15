@@ -4,6 +4,7 @@
 
 #include <dt-bindings/interconnect/qcom,sm8450.h>
 #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
+#include <dt-bindings/media/video-interfaces.h>
 #include <dt-bindings/usb/pd.h>
 
 #include "sm8450.dtsi"
@@ -1353,29 +1354,9 @@
 };
 
 /*
- * Cameras, phase 1 (attempt 35): CAMSS + CCI only, no sensors yet. SM8450 CAMSS support and camcc fixes from the
- * Galaxy Tab S8+ port (sm8450-camss, camcc-sm8450-shared-rcg, camcc-sm8450-retain-ff). CSIPHY rails as the Tab.
- * Stock sensors: main csiphy1/cci0/mclk2, ultrawide csiphy2/cci0/mclk1, tele csiphy0/cci1/mclk3, front csiphy4/cci1/mclk4.
- */
-&camss {
-	vdda-phy-supply = <&vreg_l5b_0p88>;
-	vdda-pll-supply = <&vreg_l6b_1p2>;
-
-	status = "okay";
-};
-
-&cci0 {
-	status = "okay";
-};
-
-&cci1 {
-	status = "okay";
-};
-
-/*
- * Samsung S2MPB02 camera PMIC (attempt 36): stock s2mpb02_pmic@59 on an i2c-gpio bus (tlmm 175 SDA, 176 SCL),
- * driven by the out-of-tree s2mpb02-regulator module. Front camera (IMX374) rails as stock cam-sensor1:
- * vdig LDO5 1.05 V, vio LDO9 1.8 V, vana LDO15 2.8 V.
+ * Samsung S2MPB02 camera sub-PMIC on bit-banged i2c-gpio (tlmm 175 SDA, 176 SCL),
+ * driven by s2mpb02-regulator. All 21 rails match stock dtbo voltages; buck2, bb,
+ * and camera I/O LDOs (ldo6, ldo7, ldo9) stay on so shared CCI/I2C pull-ups stay biased.
  */
 / {
 	i2c-cam-pmic {
@@ -1393,22 +1374,135 @@
 			reg = <0x59>;
 
 			regulators {
+				vreg_cam_wide_vcustom1: ldo1 {
+					regulator-name = "s2mpb02-l1";
+					regulator-min-microvolt = <925000>;
+					regulator-max-microvolt = <925000>;
+				};
+
+				vreg_s2mpb02_l2: ldo2 {
+					regulator-name = "s2mpb02-l2";
+					regulator-min-microvolt = <1000000>;
+					regulator-max-microvolt = <1000000>;
+				};
+
+				vreg_cam_tele_vdig: ldo3 {
+					regulator-name = "s2mpb02-l3";
+					regulator-min-microvolt = <1050000>;
+					regulator-max-microvolt = <1050000>;
+				};
+
+				vreg_cam_uw_vdig: ldo4 {
+					regulator-name = "s2mpb02-l4";
+					regulator-min-microvolt = <1100000>;
+					regulator-max-microvolt = <1100000>;
+				};
+
 				vreg_cam_front_vdig: ldo5 {
 					regulator-name = "s2mpb02-l5";
 					regulator-min-microvolt = <1050000>;
 					regulator-max-microvolt = <1050000>;
 				};
 
+				vreg_cam_uw_tele_vio: ldo6 {
+					regulator-name = "s2mpb02-l6";
+					regulator-min-microvolt = <1800000>;
+					regulator-max-microvolt = <1800000>;
+					regulator-always-on;
+				};
+
+				vreg_cam_wide_vio: ldo7 {
+					regulator-name = "s2mpb02-l7";
+					regulator-min-microvolt = <1800000>;
+					regulator-max-microvolt = <1800000>;
+					regulator-always-on;
+				};
+
+				vreg_cam_uw_vcustom1: ldo8 {
+					regulator-name = "s2mpb02-l8";
+					regulator-min-microvolt = <1800000>;
+					regulator-max-microvolt = <1800000>;
+				};
+
 				vreg_cam_front_vio: ldo9 {
 					regulator-name = "s2mpb02-l9";
 					regulator-min-microvolt = <1800000>;
 					regulator-max-microvolt = <1800000>;
+					regulator-always-on;
+				};
+
+				vreg_s2mpb02_l10: ldo10 {
+					regulator-name = "s2mpb02-l10";
+					regulator-min-microvolt = <1800000>;
+					regulator-max-microvolt = <1800000>;
+				};
+
+				vreg_s2mpb02_l11: ldo11 {
+					regulator-name = "s2mpb02-l11";
+					regulator-min-microvolt = <2800000>;
+					regulator-max-microvolt = <2800000>;
+				};
+
+				vreg_cam_uw_vana: ldo12 {
+					regulator-name = "s2mpb02-l12";
+					regulator-min-microvolt = <2800000>;
+					regulator-max-microvolt = <2800000>;
+				};
+
+				vreg_cam_wide_vaf: ldo13 {
+					regulator-name = "s2mpb02-l13";
+					regulator-min-microvolt = <3200000>;
+					regulator-max-microvolt = <3200000>;
+				};
+
+				vreg_cam_wide_vana: ldo14 {
+					regulator-name = "s2mpb02-l14";
+					regulator-min-microvolt = <2200000>;
+					regulator-max-microvolt = <2200000>;
 				};
 
 				vreg_cam_front_vana: ldo15 {
 					regulator-name = "s2mpb02-l15";
 					regulator-min-microvolt = <2800000>;
 					regulator-max-microvolt = <2800000>;
+				};
+
+				vreg_s2mpb02_l16: ldo16 {
+					regulator-name = "s2mpb02-l16";
+					regulator-min-microvolt = <2800000>;
+					regulator-max-microvolt = <2800000>;
+				};
+
+				vreg_cam_tele_vana: ldo17 {
+					regulator-name = "s2mpb02-l17";
+					regulator-min-microvolt = <2800000>;
+					regulator-max-microvolt = <2800000>;
+				};
+
+				vreg_s2mpb02_l18: ldo18 {
+					regulator-name = "s2mpb02-l18";
+					regulator-min-microvolt = <3200000>;
+					regulator-max-microvolt = <3200000>;
+				};
+
+				vreg_cam_wide_vdig: buck1 {
+					regulator-name = "s2mpb02-b1";
+					regulator-min-microvolt = <925000>;
+					regulator-max-microvolt = <925000>;
+				};
+
+				vreg_s2mpb02_b2: buck2 {
+					regulator-name = "s2mpb02-b2";
+					regulator-min-microvolt = <1300000>;
+					regulator-max-microvolt = <1300000>;
+					regulator-always-on;
+				};
+
+				vreg_s2mpb02_bb: bb {
+					regulator-name = "s2mpb02-bb";
+					regulator-min-microvolt = <3300000>;
+					regulator-max-microvolt = <3300000>;
+					regulator-always-on;
 				};
 			};
 		};
@@ -1421,6 +1515,271 @@
 		function = "gpio";
 		drive-strength = <2>;
 		bias-disable;
+	};
+
+	cam_wide_default: cam-wide-default-state {
+		mclk-pins {
+			pins = "gpio102";
+			function = "cam_mclk";
+			drive-strength = <2>;
+			bias-disable;
+		};
+
+		reset-pins {
+			pins = "gpio109";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+		};
+
+		long-exp-pins {
+			pins = "gpio83";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+			output-low;
+		};
+	};
+
+	cam_uw_default: cam-uw-default-state {
+		mclk-pins {
+			pins = "gpio101";
+			function = "cam_mclk";
+			drive-strength = <2>;
+			bias-disable;
+		};
+
+		reset-pins {
+			pins = "gpio106";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+
+	cam_tele_default: cam-tele-default-state {
+		mclk-pins {
+			pins = "gpio103";
+			function = "cam_mclk";
+			drive-strength = <2>;
+			bias-disable;
+		};
+
+		reset-pins {
+			pins = "gpio120";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+
+	cam_front_default: cam-front-default-state {
+		mclk-pins {
+			pins = "gpio104";
+			function = "cam_mclk";
+			drive-strength = <2>;
+			bias-disable;
+		};
+
+		reset-pins {
+			pins = "gpio24";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+};
+
+/*
+ * Cameras: CAMSS + CCI + QUP I2C16 and all 4 Samsung Galaxy S22 (r0q) sensors:
+ * - Main Wide: Samsung S5KGN3 on QUP i2c16 (0x10), MCLK2, CSIPHY1 (3-trio C-PHY)
+ * - Ultrawide: Sony IMX563 on CCI0 m0 (0x10), MCLK1, CSIPHY2 (3-trio C-PHY)
+ * - Telephoto: Samsung S5K3K1 on CCI0 m1 (0x2d), MCLK3, CSIPHY0 (4-lane D-PHY)
+ * - Front:     Sony IMX374 on CCI1 m1 (0x10), MCLK4, CSIPHY4 (4-lane D-PHY)
+ */
+&camss {
+	vdda-phy-supply = <&vreg_l5b_0p88>;
+	vdda-pll-supply = <&vreg_l6b_1p2>;
+
+	status = "okay";
+
+	ports {
+		port@0 {
+			camss_csiphy0_inep: endpoint {
+				clock-lanes = <7>;
+				data-lanes = <0 1 2 3>;
+				bus-type = <MEDIA_BUS_TYPE_CSI2_DPHY>;
+				remote-endpoint = <&s5k3k1_ep>;
+			};
+		};
+
+		port@1 {
+			camss_csiphy1_inep: endpoint {
+				clock-lanes = <7>;
+				data-lanes = <0 1 2>;
+				bus-type = <MEDIA_BUS_TYPE_CSI2_CPHY>;
+				remote-endpoint = <&s5kgn3_ep>;
+			};
+		};
+
+		port@2 {
+			camss_csiphy2_inep: endpoint {
+				clock-lanes = <7>;
+				data-lanes = <0 1 2>;
+				bus-type = <MEDIA_BUS_TYPE_CSI2_CPHY>;
+				remote-endpoint = <&imx563_ep>;
+			};
+		};
+
+		port@4 {
+			camss_csiphy4_inep: endpoint {
+				clock-lanes = <7>;
+				data-lanes = <0 1 2 3>;
+				bus-type = <MEDIA_BUS_TYPE_CSI2_DPHY>;
+				remote-endpoint = <&imx374_ep>;
+			};
+		};
+	};
+};
+
+&cci0 {
+	status = "okay";
+};
+
+&cci0_i2c0 {
+	camera@10 {
+		compatible = "sony,imx563";
+		reg = <0x10>;
+
+		clocks = <&camcc CAM_CC_MCLK1_CLK>;
+		power-domains = <&camcc TITAN_TOP_GDSC>;
+
+		pinctrl-0 = <&cam_uw_default>;
+		pinctrl-names = "default";
+
+		reset-gpios = <&tlmm 106 GPIO_ACTIVE_LOW>;
+
+		vcustom1-supply = <&vreg_cam_uw_vcustom1>;
+		vana-supply = <&vreg_cam_uw_vana>;
+		vdig-supply = <&vreg_cam_uw_vdig>;
+		vio-supply = <&vreg_cam_uw_tele_vio>;
+
+		orientation = <1>;
+		rotation = <90>;
+
+		port {
+			imx563_ep: endpoint {
+				data-lanes = <0 1 2>;
+				bus-type = <MEDIA_BUS_TYPE_CSI2_CPHY>;
+				link-frequencies = /bits/ 64 <950400000 1142400000>;
+				remote-endpoint = <&camss_csiphy2_inep>;
+			};
+		};
+	};
+};
+
+&cci0_i2c1 {
+	camera@2d {
+		compatible = "samsung,s5k3k1";
+		reg = <0x2d>;
+
+		clocks = <&camcc CAM_CC_MCLK3_CLK>;
+		power-domains = <&camcc TITAN_TOP_GDSC>;
+
+		pinctrl-0 = <&cam_tele_default>;
+		pinctrl-names = "default";
+
+		reset-gpios = <&tlmm 120 GPIO_ACTIVE_LOW>;
+
+		vio-supply = <&vreg_cam_uw_tele_vio>;
+		vana-supply = <&vreg_cam_tele_vana>;
+		vdig-supply = <&vreg_cam_tele_vdig>;
+
+		orientation = <1>;
+		rotation = <90>;
+
+		port {
+			s5k3k1_ep: endpoint {
+				data-lanes = <0 1 2 3>;
+				bus-type = <MEDIA_BUS_TYPE_CSI2_DPHY>;
+				link-frequencies = /bits/ 64 <1151700000>;
+				remote-endpoint = <&camss_csiphy0_inep>;
+			};
+		};
+	};
+};
+
+&cci1 {
+	status = "okay";
+};
+
+&cci1_i2c1 {
+	camera@10 {
+		compatible = "sony,imx374";
+		reg = <0x10>;
+
+		clocks = <&camcc CAM_CC_MCLK4_CLK>;
+		power-domains = <&camcc TITAN_TOP_GDSC>;
+
+		pinctrl-0 = <&cam_front_default>;
+		pinctrl-names = "default";
+
+		reset-gpios = <&tlmm 24 GPIO_ACTIVE_LOW>;
+
+		vana-supply = <&vreg_cam_front_vana>;
+		vio-supply = <&vreg_cam_front_vio>;
+		vdig-supply = <&vreg_cam_front_vdig>;
+
+		orientation = <0>;
+		rotation = <270>;
+
+		port {
+			imx374_ep: endpoint {
+				data-lanes = <0 1 2 3>;
+				bus-type = <MEDIA_BUS_TYPE_CSI2_DPHY>;
+				link-frequencies = /bits/ 64 <1046500000>;
+				remote-endpoint = <&camss_csiphy4_inep>;
+			};
+		};
+	};
+};
+
+&gpi_dma2 {
+	status = "okay";
+};
+
+&i2c16 {
+	clock-frequency = <1000000>;
+	status = "okay";
+
+	camera@10 {
+		compatible = "samsung,s5kgn3";
+		reg = <0x10>;
+
+		clocks = <&camcc CAM_CC_MCLK2_CLK>;
+		power-domains = <&camcc TITAN_TOP_GDSC>;
+
+		pinctrl-0 = <&cam_wide_default>;
+		pinctrl-names = "default";
+
+		reset-gpios = <&tlmm 109 GPIO_ACTIVE_LOW>;
+
+		vana-supply = <&vreg_cam_wide_vana>;
+		vio-supply = <&vreg_cam_wide_vio>;
+		vdig-supply = <&vreg_cam_wide_vdig>;
+		vcustom1-supply = <&vreg_cam_wide_vcustom1>;
+
+		orientation = <1>;
+		rotation = <90>;
+
+		port {
+			s5kgn3_ep: endpoint {
+				data-lanes = <0 1 2>;
+				bus-type = <MEDIA_BUS_TYPE_CSI2_CPHY>;
+				link-frequencies = /bits/ 64 <1657600000 1292800000>;
+				remote-endpoint = <&camss_csiphy1_inep>;
+			};
+		};
 	};
 };
 

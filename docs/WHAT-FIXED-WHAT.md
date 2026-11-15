@@ -67,14 +67,15 @@ From flashing uniLoader up to attempt 39 (2026-10-20). Kernel 7.2.11, postmarket
 
 | 53 | Display helpers silently skipped `kscreen-doctor` when the compositor socket was `wayland-1` instead of `wayland-0` | Discover `wayland-[0-9]` in `s22-display-ctl` / `s22-display-extrasd`, and resolve the session user from `/etc/passwd` (busybox `id -nu` fails under sudo) before calling `kscreen-doctor` | Ours |
 | 54 | KWin composited on `llvmpipe` because the Plasma session started before the Adreno DRM nodes existed | `startplasmamobile` now drops `EGL_PLATFORM=wayland` and waits for `/dev/dri/card0` + `/dev/dri/renderD128` before launching KWin; KWin selects `renderD128` / `freedreno FD730` | Ours |
+| 55 | Front camera (`IMX374`) CCI1 bus SDA/SCL held low (I2C timeouts) & missing rear camera rails/drivers | Expand `s2mpb02-regulator` to all 21 regulators (`LDO1-18`, `BUCK1`, `BUCK2` 1.3 V, `BUCK_BOOST` 3.3 V) and keep shared I/O & sub-PMIC rails (`buck2`, `bb`, `ldo6`, `ldo7`, `ldo9`) always-on per stock DTBO (`s2mpb02_pmic@59`), releasing the CCI pull-ups; enable `&gpi_dma2` + `&i2c16` (1 MHz) + `gpio83` (`CAM_WIDE_LONG_EXPOSURE` low) and add V4L2 drivers for `imx374`, `s5k3k1`, `imx563`, and `s5kgn3` | Stock DTBO (`fragment@68`/`104`) + CamX sensormodules + Ours |
+| 56 | Ultrawide (`IMX563`) & Main Wide (`S5KGN3`) use 3-trio MIPI C-PHY (rejected by mainline SM8450 CAMSS) | Add 3-phase C-PHY support (`MEDIA_BUS_TYPE_CSI2_CPHY`, `CSI2_RX_CFG0_PHY_TYPE_SEL = 1`, SM8450 5nm 3PH Trio0/1/2 lane config, 1.50-3.30 GSpS rate delta table, and 400 MHz `csiphy_timer` frequency clamp) in `local-sm8450-camss-cphy.patch` | Downstream `csiphy_v2_0_1_3ph` + Ours |
 
 ## Not fixed yet
 - Speaker protection firmware (volume kept moderate)
 - Keyboard auto-hide
-- Front camera (IMX374): driver written, CCI bus held low (timeouts); rear camera drivers not written
 - Unused clocks/power domains kept on (clk_ignore_unused); removing them broke the display probe (attempt 40, reverted)
 - NPU compute runtime (needs Qualcomm SDK); NPU first-call race
-- Cameras, fingerprint (QBT2000/QBT2608 TrustZone-only), NFC
+- Fingerprint (QBT2000/QBT2608 TrustZone-only), NFC
 
 ## Rules kept throughout
 - Never write the EFS partitions (efs, sec_efs, persist, modemst1/2, fsg, fsc)

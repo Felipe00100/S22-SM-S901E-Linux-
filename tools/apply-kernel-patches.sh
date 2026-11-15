@@ -28,6 +28,7 @@ for p in \
 	"$U/local-q6apm-mi2s-start-bclk-at-prepare.patch" \
 	"$U/max77705-v1-support-rev2.patch" \
 	"$T/sm8450-camss.patch" \
+	"$U/local-sm8450-camss-cphy.patch" \
 	"$T/camcc-sm8450-shared-rcg.patch" \
 	"$T/camcc-sm8450-retain-ff.patch" \
 	"$T/sc8280xp-mi2s-codec-fmt-sysclk.patch" \
@@ -58,6 +59,9 @@ cp "$U/fts2ba61y.c.as-built" drivers/input/touchscreen/fts2ba61y.c
 cp "$R/panel-samsung-s6e3fac.c" drivers/gpu/drm/panel/panel-samsung-s6e3fac.c
 cp "$R/panel-samsung-s6e3fac-mdnie.h" drivers/gpu/drm/panel/panel-samsung-s6e3fac-mdnie.h
 cp "$R/sm8450-samsung-r0q.dts" arch/arm64/boot/dts/qcom/sm8450-samsung-r0q.dts
+for f in imx374.c imx374-regs.h s5k3k1.c s5k3k1-regs.h imx563.c imx563-regs.h s5kgn3.c s5kgn3-regs.h; do
+    cp "$R/$f" "drivers/media/i2c/$f"
+done
 
 echo "[3/5] Registering DRM_PANEL_SAMSUNG_S6E3FAC in Kconfig & Makefile..."
 python3 - <<'PY'
@@ -97,6 +101,57 @@ new_t = 'obj-$(CONFIG_TYPEC_MAX77705)\t+= max77705_typec.o\nmax77705_typec-y\t\t
 if old_t in ts:
     tm.write_text(ts.replace(old_t, new_t, 1))
 PY
+
+python3 - <<'CAMWIRE'
+from pathlib import Path
+kp = Path("drivers/media/i2c/Kconfig")
+kc = kp.read_text()
+if "config VIDEO_IMX374" not in kc:
+    kc = kc.replace("config VIDEO_IMX412", """config VIDEO_IMX374
+	tristate "Sony IMX374 sensor support"
+	select V4L2_CCI_I2C
+	help
+	  This is a Video4Linux2 sensor driver for the Sony
+	  IMX374 camera.
+
+config VIDEO_IMX412""", 1)
+if "config VIDEO_IMX563" not in kc:
+    kc = kc.replace("config VIDEO_IR_I2C", """config VIDEO_IMX563
+	tristate "Sony IMX563 sensor support"
+	select V4L2_CCI_I2C
+	help
+	  This is a Video4Linux2 sensor driver for the Sony
+	  IMX563 camera.
+
+config VIDEO_IR_I2C""", 1)
+if "config VIDEO_S5K3K1" not in kc:
+    kc = kc.replace("config VIDEO_S5K5BAF", """config VIDEO_S5K3K1
+	tristate "Samsung S5K3K1 sensor support"
+	select V4L2_CCI_I2C
+	help
+	  This is a V4L2 sensor driver for Samsung S5K3K1 camera sensor.
+
+config VIDEO_S5KGN3
+	tristate "Samsung S5KGN3 sensor support"
+	select V4L2_CCI_I2C
+	help
+	  This is a V4L2 sensor driver for Samsung S5KGN3 camera sensor.
+
+config VIDEO_S5K5BAF""", 1)
+kp.write_text(kc)
+
+mp = Path("drivers/media/i2c/Makefile")
+mk = mp.read_text()
+for anchor, add in [
+    ("obj-$(CONFIG_VIDEO_IMX355) += imx355.o\n", "obj-$(CONFIG_VIDEO_IMX374) += imx374.o\n"),
+    ("obj-$(CONFIG_VIDEO_IMX415) += imx415.o\n", "obj-$(CONFIG_VIDEO_IMX563) += imx563.o\n"),
+    ("obj-$(CONFIG_VIDEO_S5K3M5) += s5k3m5.o\n", "obj-$(CONFIG_VIDEO_S5K3K1) += s5k3k1.o\n"),
+    ("obj-$(CONFIG_VIDEO_S5K6A3) += s5k6a3.o\n", "obj-$(CONFIG_VIDEO_S5KGN3) += s5kgn3.o\n"),
+]:
+    if add not in mk:
+        mk = mk.replace(anchor, anchor + add, 1)
+mp.write_text(mk)
+CAMWIRE
 
 echo "[4/5] Merging kernel/config-r0q.aarch64 + kernel/r0q.fragment..."
 cp "$R/config-r0q.aarch64" .config

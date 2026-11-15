@@ -12,7 +12,7 @@ Credits: [CREDITS.md](CREDITS.md) · License: [LICENSE.md](LICENSE.md) (GPL-2.0 
 | 5.10 (Android GKI) | Samsung stock kernel ([opensource.samsung.com](https://opensource.samsung.com)) | Android only, not mainline |
 | 6.16-rc1 | Ghatto404 / Arthurus36 ([Nura wiki](https://wiki.nura.eco/wiki/Samsung_Galaxy_S22_5G_(samsung-r0q))) | Wiki lists Wi-Fi as working; source tree not public (Arthurus36's public repo has a decompiled stock DT only) |
 | 7.2.11 (upstream) | Mainline `arch/arm64/boot/dts/qcom/sm8450-samsung-r0q.dts` | Minimal: framebuffer, regulators, USB 2.0. No panel, touch, Wi-Fi, GPU or battery |
-| **7.2.11 (this repo)** | This port | Wi-Fi 2.4 + 5 GHz, Bluetooth, **120 Hz S6E3FAC panel (Dynamic VRR/LFD, HBM, mDNIe colour calibration, Always-On Display)**, touch, GPU, stereo speakers + Earpiece + mics, **USB 3.0 SuperSpeed + OTG + PD + DisplayPort Alt-Mode**, MTP, **SLPI sensors**, **writable RTC**, **deep sleep**, **7.0 GiB RAM**, **Cellular modem + SM8450 IPA v5.1 (ModemManager, mobile data, SMS/calls/VoLTE stack)**, buttons, charging |
+| **7.2.11 (this repo)** | This port | Wi-Fi 2.4 + 5 GHz, Bluetooth, **120 Hz S6E3FAC panel (Dynamic VRR/LFD, HBM, mDNIe colour calibration, Always-On Display)**, touch, GPU, stereo speakers + Earpiece + mics, **USB 3.0 SuperSpeed + OTG + PD + DisplayPort Alt-Mode**, MTP, **SLPI sensors**, **writable RTC**, **deep sleep**, **7.0 GiB RAM**, **Cellular modem + SM8450 IPA v5.1 (ModemManager, mobile data, SMS/calls/VoLTE stack)**, **all 4 cameras (IMX374 front, S5K3K1 3x tele, IMX563 ultrawide, S5KGN3 main wide — D-PHY + 3-phase C-PHY RAW10)**, buttons, charging |
 
 To my knowledge this is the newest working mainline kernel on the r0q, and the most complete public one,
 as of 2026-10-18. Know of a newer or more complete one? Please open an issue.
@@ -28,7 +28,7 @@ Australian XSA, One UI 7, bootloader unlocked) from the phone's own storage. And
 
 | Works | Partly | Not yet |
 |---|---|---|
-| Boot via uniLoader, UFS, USB networking + SSH | **Cellular modem + SM8450 IPA v5.1**: auto-boots, QMI + `rmnet_ipa0` + `wwan0at0` in ModemManager, Dual-SIM UIM, `81voltd` & `VoiceCall` UCM2 (awaiting physical SIM test) | Cameras, fingerprint (QBT2000 TZ), NFC |
+| Boot via uniLoader, UFS, USB networking + SSH | **Cellular modem + SM8450 IPA v5.1**: auto-boots, QMI + `rmnet_ipa0` + `wwan0at0` in ModemManager, Dual-SIM UIM, `81voltd` & `VoiceCall` UCM2 (awaiting physical SIM test) | Fingerprint (QBT2000 TZ), NFC |
 | **Wi-Fi** 2.4 + 5 GHz, Wi-Fi 6 2x2, 960 Mbit/s, autoconnects at boot | On-screen keyboard (no auto-hide) | **NPU userspace (CDSP firmware runs, attempt 29)**, speaker protection |
 | **Audio: stereo speakers + Earpiece (2x CS35L41) + 2 mics**, HiFi & VoiceCall UCM2 | **Vulkan (Turnip) on Adreno 730** | |
 | **USB-C USB 3.0 SuperSpeed (5 Gbps), OTG (FAT/exFAT/ISO), PD & DisplayPort Alt-Mode (`card1-DP-1`)** + **MTP** | | |
@@ -39,6 +39,7 @@ Australian XSA, One UI 7, bootloader unlocked) from the phone's own storage. And
 | Bluetooth (address from EFS), battery %, charging | | |
 | **7.0 GiB RAM** (7,161 MiB usable), firewall (nftables) | | |
 | Plasma Mobile autologin (tinydm), **power/volume up/volume down keys** | | |
+| **All 4 cameras (CAMSS D-PHY + 3-phase C-PHY RAW10)**: IMX374 front, S5K3K1 3x tele, IMX563 ultrawide, S5KGN3 main wide | | |
 
 **Complete start-to-finish guide (unlock, root, EFS backup, TWRP, everything we found): [docs/S22-Mainline-Linux-Guide.pdf](docs/S22-Mainline-Linux-Guide.pdf).**
 

@@ -27,7 +27,8 @@
 - [x] **Brightness control in the UI** (slider mapped to DBV 6-2047) + **auto-brightness** via `STK33915` ambient light sensor (`iio-sensor-proxy`)
 - [x] **Sensors**: SLPI sensor hub (`remoteproc_slpi` + `L2C`/`L9C` rails + `s22-hex-cb3` + `hexagonrpcd`) -> auto-rotate (`LSM6DSO`), proximity & ambient light (`STK33915`), compass (`AK09918`)
 - [x] **Vibration / haptics**: Cirrus CS40L26 (`cs40l26-rom-vibra` on `i2c9 @ 0x40` + `feedbackd`)
-- [ ] **Cameras**, flash
+- [x] **Cameras (all 4 sensors streaming RAW10 via CAMSS D-PHY & 3-phase C-PHY)**: front **Sony IMX374** (`1616x912` & `3648x2736`), tele **Samsung S5K3K1** (`3648x2736` & `1824x1368`), ultrawide **Sony IMX563** (`4032x3024` & `2016x1512`), and main wide **Samsung S5KGN3** (`4080x3060` & `2040x1532`)
+- [ ] Camera LED flash
 - [ ] **Fingerprint** reader
 - [ ] **NFC**
 - [x] **USB-C**: host/OTG (with VBUS, FAT/exFAT/ISO), USB-PD (5V/3A & 9V/2A), **USB 3.0 SuperSpeed (5 Gbps, CC1/CC2 orientation)**, and **DisplayPort Alt-Mode (`card1-DP-1`, SVDM `0xff01` Pin C/D/E)**
