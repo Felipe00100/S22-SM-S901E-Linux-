@@ -10,8 +10,10 @@
 #include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/pm_runtime.h>
 #include <linux/regulator/consumer.h>
+#include <linux/unaligned.h>
 #include <media/v4l2-cci.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
@@ -26,6 +28,9 @@
 #define S5K3K1_REG_MODE_SELECT		CCI_REG16(0x0100)
 #define S5K3K1_MODE_STANDBY		0x0000
 #define S5K3K1_MODE_STREAMING		0x0103
+
+#define S5K3K1_REG_BURST		0x6f12
+#define S5K3K1_BURST_MAX_WORDS		128
 
 #define S5K3K1_REG_EXPOSURE		CCI_REG16(0x0202)
 #define S5K3K1_EXPOSURE_MIN		4
@@ -130,6 +135,9 @@ struct s5k3k1 {
 	struct v4l2_ctrl *gain;
 
 	const struct s5k3k1_mode *cur_mode;
+	const struct s5k3k1_mode *streamed_mode;
+	struct device *lens_dev;
+	struct device *ois_dev;
 };
 
 static inline struct s5k3k1 *to_s5k3k1(struct v4l2_subdev *sd)
@@ -137,23 +145,114 @@ static inline struct s5k3k1 *to_s5k3k1(struct v4l2_subdev *sd)
 	return container_of(sd, struct s5k3k1, sd);
 }
 
-static int s5k3k1_write_seq(struct regmap *regmap,
+static unsigned int s5k3k1_burst_max_words(struct i2c_client *client)
+{
+	const struct i2c_adapter_quirks *quirks = client->adapter->quirks;
+
+	if (quirks && quirks->max_write_len) {
+		if (quirks->max_write_len <= 2)
+			return 1;
+		return min_t(unsigned int, S5K3K1_BURST_MAX_WORDS,
+			     (quirks->max_write_len - 2) / 2);
+	}
+
+	return S5K3K1_BURST_MAX_WORDS;
+}
+
+static int s5k3k1_send_burst(struct i2c_client *client, u8 *buf,
+			     unsigned int words)
+{
+	int len = 2 + words * 2;
+	int ret;
+
+	put_unaligned_be16(S5K3K1_REG_BURST, buf);
+	ret = i2c_master_send(client, buf, len);
+	if (ret < 0)
+		return ret;
+
+	return ret == len ? 0 : -EIO;
+}
+
+static int s5k3k1_write_seq(struct s5k3k1 *s5k3k1,
 			    const struct s5k3k1_reg_seq *regs,
 			    unsigned int count)
 {
-	unsigned int i;
+	struct i2c_client *client = to_i2c_client(s5k3k1->dev);
+	unsigned int max_words = s5k3k1_burst_max_words(client);
+	u8 buf[2 + S5K3K1_BURST_MAX_WORDS * 2];
+	unsigned int i = 0;
 	int ret;
 
-	for (i = 0; i < count; i++) {
-		ret = cci_write(regmap, regs[i].reg, regs[i].val, NULL);
+	while (i < count) {
+		if (regs[i].reg == CCI_REG16(S5K3K1_REG_BURST) &&
+		    !regs[i].delay_us && max_words > 1) {
+			unsigned int chunk = 0;
+
+			while (chunk < max_words && i + chunk < count &&
+			       regs[i + chunk].reg == CCI_REG16(S5K3K1_REG_BURST) &&
+			       !regs[i + chunk].delay_us) {
+				put_unaligned_be16(regs[i + chunk].val,
+						   &buf[2 + chunk * 2]);
+				chunk++;
+			}
+
+			if (chunk > 1) {
+				ret = s5k3k1_send_burst(client, buf, chunk);
+				if (ret)
+					return ret;
+				i += chunk;
+				continue;
+			}
+		}
+
+		ret = cci_write(s5k3k1->regmap, regs[i].reg, regs[i].val, NULL);
 		if (ret)
 			return ret;
 
 		if (regs[i].delay_us)
 			fsleep(regs[i].delay_us);
+
+		i++;
 	}
 
 	return 0;
+}
+
+static void s5k3k1_pm_get_dep(struct device *dev, const char *prop,
+			      struct device **out)
+{
+	struct device_node *np;
+	struct i2c_client *client;
+	int ret;
+
+	if (*out)
+		return;
+
+	np = of_parse_phandle(dev->of_node, prop, 0);
+	if (!np)
+		return;
+
+	client = of_find_i2c_device_by_node(np);
+	of_node_put(np);
+	if (!client)
+		return;
+
+	ret = pm_runtime_resume_and_get(&client->dev);
+	if (ret < 0) {
+		put_device(&client->dev);
+		return;
+	}
+
+	*out = &client->dev;
+}
+
+static void s5k3k1_pm_put_dep(struct device **dep)
+{
+	if (*dep) {
+		pm_runtime_put_autosuspend(*dep);
+		put_device(*dep);
+		*dep = NULL;
+	}
 }
 
 static int s5k3k1_power_on(struct device *dev)
@@ -193,6 +292,7 @@ static int s5k3k1_power_off(struct device *dev)
 	struct v4l2_subdev *sd = dev_get_drvdata(dev);
 	struct s5k3k1 *s5k3k1 = to_s5k3k1(sd);
 
+	s5k3k1->streamed_mode = NULL;
 	gpiod_set_value_cansleep(s5k3k1->reset_gpio, 1);
 	clk_disable_unprepare(s5k3k1->xclk);
 	regulator_bulk_disable(S5K3K1_NUM_SUPPLIES, s5k3k1->supplies);
@@ -338,7 +438,7 @@ static int s5k3k1_init_controls(struct s5k3k1 *s5k3k1)
 static void s5k3k1_fill_format(const struct s5k3k1_mode *mode,
 			       struct v4l2_mbus_framefmt *fmt)
 {
-	fmt->code = MEDIA_BUS_FMT_SGRBG10_1X10;
+	fmt->code = MEDIA_BUS_FMT_SGBRG10_1X10;
 	fmt->width = mode->width;
 	fmt->height = mode->height;
 	fmt->field = V4L2_FIELD_NONE;
@@ -366,7 +466,7 @@ static int s5k3k1_enum_mbus_code(struct v4l2_subdev *sd,
 	if (code->index > 0)
 		return -EINVAL;
 
-	code->code = MEDIA_BUS_FMT_SGRBG10_1X10;
+	code->code = MEDIA_BUS_FMT_SGBRG10_1X10;
 	return 0;
 }
 
@@ -375,7 +475,7 @@ static int s5k3k1_enum_frame_size(struct v4l2_subdev *sd,
 				  struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(s5k3k1_modes) ||
-	    fse->code != MEDIA_BUS_FMT_SGRBG10_1X10)
+	    fse->code != MEDIA_BUS_FMT_SGBRG10_1X10)
 		return -EINVAL;
 
 	fse->min_width = s5k3k1_modes[fse->index].width;
@@ -468,10 +568,15 @@ static int s5k3k1_enable_streams(struct v4l2_subdev *sd,
 	if (ret < 0)
 		return ret;
 
-	ret = s5k3k1_write_seq(s5k3k1->regmap, s5k3k1_init_regs,
-			       ARRAY_SIZE(s5k3k1_init_regs));
-	if (ret)
-		goto err_rpm;
+	s5k3k1_pm_get_dep(s5k3k1->dev, "lens-focus", &s5k3k1->lens_dev);
+	s5k3k1_pm_get_dep(s5k3k1->dev, "samsung,ois", &s5k3k1->ois_dev);
+
+	if (s5k3k1->streamed_mode != mode) {
+		ret = s5k3k1_write_seq(s5k3k1, s5k3k1_init_regs,
+				       ARRAY_SIZE(s5k3k1_init_regs));
+		if (ret)
+			goto err_rpm;
+	}
 
 	ret = cci_multi_reg_write(s5k3k1->regmap, s5k3k1_master_regs,
 				  ARRAY_SIZE(s5k3k1_master_regs), NULL);
@@ -491,9 +596,13 @@ static int s5k3k1_enable_streams(struct v4l2_subdev *sd,
 	if (ret)
 		goto err_rpm;
 
+	s5k3k1->streamed_mode = mode;
+
 	return 0;
 
 err_rpm:
+	s5k3k1_pm_put_dep(&s5k3k1->ois_dev);
+	s5k3k1_pm_put_dep(&s5k3k1->lens_dev);
 	pm_runtime_put_autosuspend(s5k3k1->dev);
 	return ret;
 }
@@ -510,6 +619,8 @@ static int s5k3k1_disable_streams(struct v4l2_subdev *sd,
 	if (ret)
 		dev_err(s5k3k1->dev, "failed to stop streaming: %d\n", ret);
 
+	s5k3k1_pm_put_dep(&s5k3k1->ois_dev);
+	s5k3k1_pm_put_dep(&s5k3k1->lens_dev);
 	pm_runtime_put_autosuspend(s5k3k1->dev);
 	return ret;
 }
@@ -691,6 +802,8 @@ static void s5k3k1_remove(struct i2c_client *client)
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct s5k3k1 *s5k3k1 = to_s5k3k1(sd);
 
+	s5k3k1_pm_put_dep(&s5k3k1->ois_dev);
+	s5k3k1_pm_put_dep(&s5k3k1->lens_dev);
 	v4l2_async_unregister_subdev(sd);
 	pm_runtime_dont_use_autosuspend(s5k3k1->dev);
 	pm_runtime_disable(s5k3k1->dev);

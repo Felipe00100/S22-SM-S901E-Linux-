@@ -3,6 +3,21 @@
 # Sequence matches stock CamX dual-OIS init + centering settings.
 set -eu
 
+for c in /sys/bus/i2c/devices/*-0062/of_node/compatible \
+	 /sys/firmware/devicetree/base/soc@0/geniqup@8c0000/i2c@88c000/ois@62/compatible; do
+	if [ -e "$c" ] && grep -qs "samsung,r0q-ois" "$c"; then
+		echo "OIS 0x62 bound in device tree (managed by samsung-r0q-ois kernel driver)"
+		exit 0
+	fi
+done
+
+for d in /sys/bus/i2c/devices/*-0062/driver; do
+	if [ -e "$d" ]; then
+		echo "OIS 0x62 managed by kernel driver ($(basename "$(readlink -f "$d")"))"
+		exit 0
+	fi
+done
+
 modprobe i2c-dev 2>/dev/null || true
 
 BUS=""

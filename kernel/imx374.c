@@ -10,6 +10,7 @@
 #include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/pm_runtime.h>
 #include <linux/regulator/consumer.h>
 #include <media/v4l2-cci.h>
@@ -130,7 +131,45 @@ struct imx374 {
 	struct v4l2_ctrl *gain;
 
 	const struct imx374_mode *cur_mode;
+	struct device *lens_dev;
 };
+
+static void imx374_pm_get_dep(struct device *dev, const char *prop,
+			      struct device **out)
+{
+	struct device_node *np;
+	struct i2c_client *client;
+	int ret;
+
+	if (*out)
+		return;
+
+	np = of_parse_phandle(dev->of_node, prop, 0);
+	if (!np)
+		return;
+
+	client = of_find_i2c_device_by_node(np);
+	of_node_put(np);
+	if (!client)
+		return;
+
+	ret = pm_runtime_resume_and_get(&client->dev);
+	if (ret < 0) {
+		put_device(&client->dev);
+		return;
+	}
+
+	*out = &client->dev;
+}
+
+static void imx374_pm_put_dep(struct device **dep)
+{
+	if (*dep) {
+		pm_runtime_put_autosuspend(*dep);
+		put_device(*dep);
+		*dep = NULL;
+	}
+}
 
 static inline struct imx374 *to_imx374(struct v4l2_subdev *sd)
 {
@@ -259,7 +298,6 @@ static int imx374_init_controls(struct imx374 *imx374)
 	ret = v4l2_ctrl_handler_init(hdlr, 8);
 	if (ret)
 		return ret;
-
 
 	imx374->link_freq = v4l2_ctrl_new_int_menu(hdlr, &imx374_ctrl_ops,
 						   V4L2_CID_LINK_FREQ,
@@ -450,6 +488,8 @@ static int imx374_enable_streams(struct v4l2_subdev *sd,
 	if (ret < 0)
 		return ret;
 
+	imx374_pm_get_dep(imx374->dev, "lens-focus", &imx374->lens_dev);
+
 	ret = cci_multi_reg_write(imx374->regmap, imx374_init_regs,
 				  ARRAY_SIZE(imx374_init_regs), NULL);
 	if (ret)
@@ -471,6 +511,7 @@ static int imx374_enable_streams(struct v4l2_subdev *sd,
 	return 0;
 
 err_rpm:
+	imx374_pm_put_dep(&imx374->lens_dev);
 	pm_runtime_put_autosuspend(imx374->dev);
 	return ret;
 }
@@ -487,6 +528,7 @@ static int imx374_disable_streams(struct v4l2_subdev *sd,
 	if (ret)
 		dev_err(imx374->dev, "failed to stop streaming: %d\n", ret);
 
+	imx374_pm_put_dep(&imx374->lens_dev);
 	pm_runtime_put_autosuspend(imx374->dev);
 	return ret;
 }
@@ -668,6 +710,7 @@ static void imx374_remove(struct i2c_client *client)
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct imx374 *imx374 = to_imx374(sd);
 
+	imx374_pm_put_dep(&imx374->lens_dev);
 	v4l2_async_unregister_subdev(sd);
 	pm_runtime_dont_use_autosuspend(imx374->dev);
 	pm_runtime_disable(imx374->dev);
