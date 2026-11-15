@@ -249,13 +249,14 @@ static const struct v4l2_ctrl_ops imx563_ctrl_ops = {
 static int imx563_init_controls(struct imx563 *imx563)
 {
 	struct v4l2_ctrl_handler *hdlr = &imx563->ctrl_handler;
+	struct v4l2_fwnode_device_properties props;
 	const struct imx563_mode *mode = imx563->cur_mode;
 	s64 hblank_def = mode->hts - mode->width;
 	s64 vblank_def = mode->vts_def - mode->height;
 	s64 exposure_max = mode->vts_def - IMX563_EXPOSURE_MARGIN;
 	int ret;
 
-	ret = v4l2_ctrl_handler_init(hdlr, 6);
+	ret = v4l2_ctrl_handler_init(hdlr, 8);
 	if (ret)
 		return ret;
 
@@ -287,12 +288,24 @@ static int imx563_init_controls(struct imx563 *imx563)
 	imx563->exposure = v4l2_ctrl_new_std(hdlr, &imx563_ctrl_ops,
 					     V4L2_CID_EXPOSURE, IMX563_EXPOSURE_MIN,
 					     exposure_max, IMX563_EXPOSURE_STEP,
-					     exposure_max);
+					     min_t(s64, 1000, exposure_max));
 
 	imx563->gain = v4l2_ctrl_new_std(hdlr, &imx563_ctrl_ops,
 					 V4L2_CID_ANALOGUE_GAIN,
 					 IMX563_ANA_GAIN_MIN, IMX563_ANA_GAIN_MAX,
 					 IMX563_ANA_GAIN_STEP, IMX563_ANA_GAIN_DEFAULT);
+
+	ret = v4l2_fwnode_device_parse(imx563->dev, &props);
+	if (ret) {
+		v4l2_ctrl_handler_free(hdlr);
+		return ret;
+	}
+
+	ret = v4l2_ctrl_new_fwnode_properties(hdlr, &imx563_ctrl_ops, &props);
+	if (ret) {
+		v4l2_ctrl_handler_free(hdlr);
+		return ret;
+	}
 
 	if (hdlr->error) {
 		ret = hdlr->error;
@@ -307,7 +320,7 @@ static int imx563_init_controls(struct imx563 *imx563)
 static void imx563_fill_format(const struct imx563_mode *mode,
 			       struct v4l2_mbus_framefmt *fmt)
 {
-	fmt->code = MEDIA_BUS_FMT_SRGGB10_1X10;
+	fmt->code = MEDIA_BUS_FMT_SBGGR10_1X10;
 	fmt->width = mode->width;
 	fmt->height = mode->height;
 	fmt->field = V4L2_FIELD_NONE;
@@ -335,7 +348,7 @@ static int imx563_enum_mbus_code(struct v4l2_subdev *sd,
 	if (code->index > 0)
 		return -EINVAL;
 
-	code->code = MEDIA_BUS_FMT_SRGGB10_1X10;
+	code->code = MEDIA_BUS_FMT_SBGGR10_1X10;
 	return 0;
 }
 
@@ -344,7 +357,7 @@ static int imx563_enum_frame_size(struct v4l2_subdev *sd,
 				  struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(imx563_modes) ||
-	    fse->code != MEDIA_BUS_FMT_SRGGB10_1X10)
+	    fse->code != MEDIA_BUS_FMT_SBGGR10_1X10)
 		return -EINVAL;
 
 	fse->min_width = imx563_modes[fse->index].width;
@@ -377,6 +390,7 @@ static int imx563_set_pad_format(struct v4l2_subdev *sd,
 		s64 hblank = mode->hts - mode->width;
 		s64 vblank = mode->vts_def - mode->height;
 		s64 exp_max = mode->vts_def - IMX563_EXPOSURE_MARGIN;
+		s64 exp_def = min_t(s64, 1000, exp_max);
 
 		imx563->cur_mode = mode;
 		__v4l2_ctrl_s_ctrl(imx563->link_freq, mode->link_freq_idx);
@@ -386,8 +400,8 @@ static int imx563_set_pad_format(struct v4l2_subdev *sd,
 					 IMX563_VTS_MAX - mode->height, 1, vblank);
 		__v4l2_ctrl_s_ctrl(imx563->vblank, vblank);
 		__v4l2_ctrl_modify_range(imx563->exposure, IMX563_EXPOSURE_MIN,
-					 exp_max, IMX563_EXPOSURE_STEP, exp_max);
-		__v4l2_ctrl_s_ctrl(imx563->exposure, exp_max);
+					 exp_max, IMX563_EXPOSURE_STEP, exp_def);
+		__v4l2_ctrl_s_ctrl(imx563->exposure, exp_def);
 	}
 
 	return imx563->ctrl_handler.error;
