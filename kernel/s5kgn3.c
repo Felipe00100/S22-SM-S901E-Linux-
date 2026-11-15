@@ -10,8 +10,10 @@
 #include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/pm_runtime.h>
 #include <linux/regulator/consumer.h>
+#include <linux/unaligned.h>
 #include <media/v4l2-cci.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
@@ -28,6 +30,13 @@
 #define S5KGN3_REG_STREAM_STOP		CCI_REG16(0x0e00)
 #define S5KGN3_MODE_STANDBY		0x0003
 #define S5KGN3_MODE_STREAMING		0x0103
+
+#define S5KGN3_REG_PAGE_SELECT		0xfcfc
+#define S5KGN3_PAGE_SYS			0x4000
+#define S5KGN3_REG_BURST_ENABLE		0x6004
+#define S5KGN3_REG_BURST		0x6f12
+#define S5KGN3_BURST_MAX_WORDS		128
+#define S5KGN3_BURST_MIN_WRAP_WORDS	4
 
 #define S5KGN3_REG_EXPOSURE		CCI_REG16(0x0202)
 #define S5KGN3_EXPOSURE_MIN		4
@@ -133,6 +142,9 @@ struct s5kgn3 {
 	struct v4l2_ctrl *gain;
 
 	const struct s5kgn3_mode *cur_mode;
+	const struct s5kgn3_mode *streamed_mode;
+	struct device *lens_dev;
+	struct device *ois_dev;
 };
 
 static inline struct s5kgn3 *to_s5kgn3(struct v4l2_subdev *sd)
@@ -140,23 +152,215 @@ static inline struct s5kgn3 *to_s5kgn3(struct v4l2_subdev *sd)
 	return container_of(sd, struct s5kgn3, sd);
 }
 
-static int s5kgn3_write_seq(struct regmap *regmap,
-			    const struct s5kgn3_reg_seq *regs,
-			    unsigned int count)
+static unsigned int s5kgn3_burst_max_words(struct i2c_client *client)
 {
-	unsigned int i;
+	const struct i2c_adapter_quirks *quirks = client->adapter->quirks;
+
+	if (quirks && quirks->max_write_len) {
+		if (quirks->max_write_len <= 2)
+			return 1;
+		return min_t(unsigned int, S5KGN3_BURST_MAX_WORDS,
+			     (quirks->max_write_len - 2) / 2);
+	}
+
+	return S5KGN3_BURST_MAX_WORDS;
+}
+
+static int s5kgn3_send_burst(struct i2c_client *client, u8 *buf,
+			     unsigned int words)
+{
+	int len = 2 + words * 2;
 	int ret;
 
-	for (i = 0; i < count; i++) {
-		ret = cci_write(regmap, regs[i].reg, regs[i].val, NULL);
+	put_unaligned_be16(S5KGN3_REG_BURST, buf);
+	ret = i2c_master_send(client, buf, len);
+	if (ret < 0)
+		return ret;
+
+	return ret == len ? 0 : -EIO;
+}
+
+struct s5kgn3_seq_ops {
+	void (*read_entry)(const void *regs, unsigned int idx,
+			   u32 *reg, u16 *val, u16 *delay_us);
+};
+
+static void s5kgn3_read_reg_seq(const void *regs, unsigned int idx,
+				u32 *reg, u16 *val, u16 *delay_us)
+{
+	const struct s5kgn3_reg_seq *seq = regs;
+
+	*reg = seq[idx].reg;
+	*val = seq[idx].val;
+	*delay_us = seq[idx].delay_us;
+}
+
+static void s5kgn3_read_cci_seq(const void *regs, unsigned int idx,
+				u32 *reg, u16 *val, u16 *delay_us)
+{
+	const struct cci_reg_sequence *seq = regs;
+
+	*reg = seq[idx].reg;
+	*val = seq[idx].val;
+	*delay_us = 0;
+}
+
+static int s5kgn3_write_table(struct s5kgn3 *s5kgn3,
+			      const struct s5kgn3_seq_ops *ops,
+			      const void *regs, unsigned int count)
+{
+	struct i2c_client *client = to_i2c_client(s5kgn3->dev);
+	unsigned int max_words = s5kgn3_burst_max_words(client);
+	u8 buf[2 + S5KGN3_BURST_MAX_WORDS * 2];
+	bool burst_en = false;
+	u16 cur_page = 0;
+	unsigned int i = 0;
+	int ret;
+
+	while (i < count) {
+		u32 reg;
+		u16 val, delay_us;
+		unsigned int run = 0;
+
+		ops->read_entry(regs, i, &reg, &val, &delay_us);
+
+		/*
+		 * S5KGN3 only auto-increments the 0x6f12 indirect SRAM pointer
+		 * across multi-word I2C writes while 0x6004=1 on page 0x4000;
+		 * with 0x6004=0, extra packet bytes spill onto 0x6f14+.
+		 */
+		while (max_words > 1 && i + run < count) {
+			u32 nreg;
+			u16 nval, ndelay;
+
+			ops->read_entry(regs, i + run, &nreg, &nval, &ndelay);
+			if (nreg != CCI_REG16(S5KGN3_REG_BURST) || ndelay)
+				break;
+			run++;
+		}
+
+		if (run > 1 &&
+		    (burst_en ||
+		     (cur_page == S5KGN3_PAGE_SYS &&
+		      run >= S5KGN3_BURST_MIN_WRAP_WORDS))) {
+			bool wrap = !burst_en;
+			unsigned int sent = 0;
+
+			if (wrap) {
+				ret = cci_write(s5kgn3->regmap,
+						CCI_REG16(S5KGN3_REG_BURST_ENABLE),
+						0x0001, NULL);
+				if (ret)
+					return ret;
+			}
+
+			while (sent < run) {
+				unsigned int chunk = min(run - sent, max_words);
+				unsigned int j;
+
+				for (j = 0; j < chunk; j++) {
+					u32 breg;
+					u16 bval, bdelay;
+
+					ops->read_entry(regs, i + sent + j,
+							&breg, &bval, &bdelay);
+					put_unaligned_be16(bval,
+							   &buf[2 + j * 2]);
+				}
+
+				ret = s5kgn3_send_burst(client, buf, chunk);
+				if (ret)
+					return ret;
+				sent += chunk;
+			}
+
+			if (wrap) {
+				ret = cci_write(s5kgn3->regmap,
+						CCI_REG16(S5KGN3_REG_BURST_ENABLE),
+						0x0000, NULL);
+				if (ret)
+					return ret;
+			}
+
+			i += run;
+			continue;
+		}
+
+		ret = cci_write(s5kgn3->regmap, reg, val, NULL);
 		if (ret)
 			return ret;
 
-		if (regs[i].delay_us)
-			fsleep(regs[i].delay_us);
+		if ((reg & 0xffff) == S5KGN3_REG_PAGE_SELECT)
+			cur_page = val;
+		else if ((reg & 0xffff) == S5KGN3_REG_BURST_ENABLE)
+			burst_en = (val == 0x0001);
+
+		if (delay_us)
+			fsleep(delay_us);
+
+		i++;
 	}
 
 	return 0;
+}
+
+static const struct s5kgn3_seq_ops s5kgn3_reg_seq_ops = {
+	.read_entry = s5kgn3_read_reg_seq,
+};
+
+static const struct s5kgn3_seq_ops s5kgn3_cci_seq_ops = {
+	.read_entry = s5kgn3_read_cci_seq,
+};
+
+static int s5kgn3_write_seq(struct s5kgn3 *s5kgn3,
+			    const struct s5kgn3_reg_seq *regs,
+			    unsigned int count)
+{
+	return s5kgn3_write_table(s5kgn3, &s5kgn3_reg_seq_ops, regs, count);
+}
+
+static int s5kgn3_write_cci_seq(struct s5kgn3 *s5kgn3,
+				const struct cci_reg_sequence *regs,
+				unsigned int count)
+{
+	return s5kgn3_write_table(s5kgn3, &s5kgn3_cci_seq_ops, regs, count);
+}
+
+static void s5kgn3_pm_get_dep(struct device *dev, const char *prop,
+			      struct device **out)
+{
+	struct device_node *np;
+	struct i2c_client *client;
+	int ret;
+
+	if (*out)
+		return;
+
+	np = of_parse_phandle(dev->of_node, prop, 0);
+	if (!np)
+		return;
+
+	client = of_find_i2c_device_by_node(np);
+	of_node_put(np);
+	if (!client)
+		return;
+
+	ret = pm_runtime_resume_and_get(&client->dev);
+	if (ret < 0) {
+		put_device(&client->dev);
+		return;
+	}
+
+	*out = &client->dev;
+}
+
+static void s5kgn3_pm_put_dep(struct device **dep)
+{
+	if (*dep) {
+		pm_runtime_put_autosuspend(*dep);
+		put_device(*dep);
+		*dep = NULL;
+	}
 }
 
 static int s5kgn3_power_on(struct device *dev)
@@ -195,6 +399,7 @@ static int s5kgn3_power_off(struct device *dev)
 	struct v4l2_subdev *sd = dev_get_drvdata(dev);
 	struct s5kgn3 *s5kgn3 = to_s5kgn3(sd);
 
+	s5kgn3->streamed_mode = NULL;
 	gpiod_set_value_cansleep(s5kgn3->reset_gpio, 1);
 	clk_disable_unprepare(s5kgn3->xclk);
 	regulator_bulk_disable(S5KGN3_NUM_SUPPLIES, s5kgn3->supplies);
@@ -341,7 +546,7 @@ static int s5kgn3_init_controls(struct s5kgn3 *s5kgn3)
 static void s5kgn3_fill_format(const struct s5kgn3_mode *mode,
 			       struct v4l2_mbus_framefmt *fmt)
 {
-	fmt->code = MEDIA_BUS_FMT_SGRBG10_1X10;
+	fmt->code = MEDIA_BUS_FMT_SGBRG10_1X10;
 	fmt->width = mode->width;
 	fmt->height = mode->height;
 	fmt->field = V4L2_FIELD_NONE;
@@ -369,7 +574,7 @@ static int s5kgn3_enum_mbus_code(struct v4l2_subdev *sd,
 	if (code->index > 0)
 		return -EINVAL;
 
-	code->code = MEDIA_BUS_FMT_SGRBG10_1X10;
+	code->code = MEDIA_BUS_FMT_SGBRG10_1X10;
 	return 0;
 }
 
@@ -378,7 +583,7 @@ static int s5kgn3_enum_frame_size(struct v4l2_subdev *sd,
 				  struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(s5kgn3_modes) ||
-	    fse->code != MEDIA_BUS_FMT_SGRBG10_1X10)
+	    fse->code != MEDIA_BUS_FMT_SGBRG10_1X10)
 		return -EINVAL;
 
 	fse->min_width = s5kgn3_modes[fse->index].width;
@@ -463,12 +668,17 @@ static int s5kgn3_enable_streams(struct v4l2_subdev *sd,
 	if (ret < 0)
 		return ret;
 
-	ret = s5kgn3_write_seq(s5kgn3->regmap, s5kgn3_init_regs,
-			       ARRAY_SIZE(s5kgn3_init_regs));
-	if (ret)
-		goto err_rpm;
+	s5kgn3_pm_get_dep(s5kgn3->dev, "lens-focus", &s5kgn3->lens_dev);
+	s5kgn3_pm_get_dep(s5kgn3->dev, "samsung,ois", &s5kgn3->ois_dev);
 
-	ret = cci_multi_reg_write(s5kgn3->regmap, mode->regs, mode->num_regs, NULL);
+	if (s5kgn3->streamed_mode != mode) {
+		ret = s5kgn3_write_seq(s5kgn3, s5kgn3_init_regs,
+				       ARRAY_SIZE(s5kgn3_init_regs));
+		if (ret)
+			goto err_rpm;
+	}
+
+	ret = s5kgn3_write_cci_seq(s5kgn3, mode->regs, mode->num_regs);
 	if (ret)
 		goto err_rpm;
 
@@ -482,9 +692,13 @@ static int s5kgn3_enable_streams(struct v4l2_subdev *sd,
 	if (ret)
 		goto err_rpm;
 
+	s5kgn3->streamed_mode = mode;
+
 	return 0;
 
 err_rpm:
+	s5kgn3_pm_put_dep(&s5kgn3->ois_dev);
+	s5kgn3_pm_put_dep(&s5kgn3->lens_dev);
 	pm_runtime_put_autosuspend(s5kgn3->dev);
 	return ret;
 }
@@ -503,6 +717,8 @@ static int s5kgn3_disable_streams(struct v4l2_subdev *sd,
 	if (ret)
 		dev_err(s5kgn3->dev, "failed to stop streaming: %d\n", ret);
 
+	s5kgn3_pm_put_dep(&s5kgn3->ois_dev);
+	s5kgn3_pm_put_dep(&s5kgn3->lens_dev);
 	pm_runtime_put_autosuspend(s5kgn3->dev);
 	return ret;
 }
@@ -684,6 +900,8 @@ static void s5kgn3_remove(struct i2c_client *client)
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct s5kgn3 *s5kgn3 = to_s5kgn3(sd);
 
+	s5kgn3_pm_put_dep(&s5kgn3->ois_dev);
+	s5kgn3_pm_put_dep(&s5kgn3->lens_dev);
 	v4l2_async_unregister_subdev(sd);
 	pm_runtime_dont_use_autosuspend(s5kgn3->dev);
 	pm_runtime_disable(s5kgn3->dev);

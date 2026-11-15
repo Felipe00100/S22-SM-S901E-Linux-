@@ -1449,7 +1449,6 @@
 					regulator-name = "s2mpb02-l11";
 					regulator-min-microvolt = <2800000>;
 					regulator-max-microvolt = <2800000>;
-					regulator-always-on;
 				};
 
 				vreg_cam_uw_vana: ldo12 {
@@ -1492,7 +1491,6 @@
 					regulator-name = "s2mpb02-l18";
 					regulator-min-microvolt = <3200000>;
 					regulator-max-microvolt = <3200000>;
-					regulator-always-on;
 				};
 
 				vreg_cam_wide_vdig: buck1 {
@@ -1605,7 +1603,6 @@
 			function = "gpio";
 			drive-strength = <2>;
 			bias-disable;
-			output-high;
 		};
 
 		boot0-pins {
@@ -1723,6 +1720,7 @@
 		vana-supply = <&vreg_cam_tele_vana>;
 		vdig-supply = <&vreg_cam_tele_vdig>;
 		lens-focus = <&vcm_tele>;
+		samsung,ois = <&cam_ois>;
 
 		orientation = <1>;
 		rotation = <270>;
@@ -1832,6 +1830,17 @@
 	pinctrl-0 = <&qup_i2c18_data_clk &cam_ois_default>;
 	pinctrl-names = "default";
 	status = "okay";
+
+	cam_ois: ois@62 {
+		compatible = "samsung,r0q-ois";
+		reg = <0x62>;
+
+		reset-gpios = <&tlmm 97 GPIO_ACTIVE_LOW>;
+
+		vio-supply = <&vreg_s2mpb02_l10>;
+		vana-supply = <&vreg_s2mpb02_l11>;
+		vdd-supply = <&vreg_s2mpb02_l18>;
+	};
 };
 
 &i2c16 {
@@ -1855,6 +1864,7 @@
 		vdig-supply = <&vreg_cam_wide_vdig>;
 		vcustom1-supply = <&vreg_cam_wide_vcustom1>;
 		lens-focus = <&vcm_wide>;
+		samsung,ois = <&cam_ois>;
 
 		orientation = <1>;
 		rotation = <270>;

@@ -60,7 +60,7 @@ cp "$U/fts2ba61y.c.as-built" drivers/input/touchscreen/fts2ba61y.c
 cp "$R/panel-samsung-s6e3fac.c" drivers/gpu/drm/panel/panel-samsung-s6e3fac.c
 cp "$R/panel-samsung-s6e3fac-mdnie.h" drivers/gpu/drm/panel/panel-samsung-s6e3fac-mdnie.h
 cp "$R/sm8450-samsung-r0q.dts" arch/arm64/boot/dts/qcom/sm8450-samsung-r0q.dts
-for f in imx374.c imx374-regs.h s5k3k1.c s5k3k1-regs.h imx563.c imx563-regs.h s5kgn3.c s5kgn3-regs.h; do
+for f in imx374.c imx374-regs.h s5k3k1.c s5k3k1-regs.h imx563.c imx563-regs.h s5kgn3.c s5kgn3-regs.h samsung-r0q-ois.c; do
     cp "$R/$f" "drivers/media/i2c/$f"
 done
 
@@ -138,6 +138,12 @@ config VIDEO_S5KGN3
 	help
 	  This is a V4L2 sensor driver for Samsung S5KGN3 camera sensor.
 
+config VIDEO_SAMSUNG_R0Q_OIS
+	tristate "Samsung Galaxy S22 (r0q) OIS MCU support"
+	depends on I2C && GPIOLIB
+	help
+	  Runtime PM and centering driver for the Galaxy S22 (r0q) OIS MCU.
+
 config VIDEO_S5K5BAF""", 1)
 kp.write_text(kc)
 
@@ -148,6 +154,7 @@ for anchor, add in [
     ("obj-$(CONFIG_VIDEO_IMX415) += imx415.o\n", "obj-$(CONFIG_VIDEO_IMX563) += imx563.o\n"),
     ("obj-$(CONFIG_VIDEO_S5K3M5) += s5k3m5.o\n", "obj-$(CONFIG_VIDEO_S5K3K1) += s5k3k1.o\n"),
     ("obj-$(CONFIG_VIDEO_S5K6A3) += s5k6a3.o\n", "obj-$(CONFIG_VIDEO_S5KGN3) += s5kgn3.o\n"),
+    ("obj-$(CONFIG_VIDEO_AK7375) += ak7375.o\n", "obj-$(CONFIG_VIDEO_SAMSUNG_R0Q_OIS) += samsung-r0q-ois.o\n"),
 ]:
     if add not in mk:
         mk = mk.replace(anchor, anchor + add, 1)
