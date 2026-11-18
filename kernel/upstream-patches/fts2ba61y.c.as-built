@@ -6,6 +6,7 @@
 #include <linux/interrupt.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/pm.h>
 #include <linux/input/mt.h>
 #include <linux/spi/spi.h>
 #include <linux/input/touchscreen.h>
@@ -93,12 +94,19 @@ struct fts2ba61y_data {
 	struct regulator_bulk_data regulators[2];
 	struct input_dev *input_dev;
 	struct mutex mutex;
+	struct mutex state_lock;
 	struct touchscreen_properties prop;
 
 	u8 tx_count;
 
 	unsigned int max_x;
 	unsigned int max_y;
+
+	bool power_on;
+	bool sense_on;
+	bool resume_sense;
+	bool irq_requested;
+	bool irq_enabled;
 };
 
 static int fts2ba61y_write(struct fts2ba61y_data *ts,
@@ -263,28 +271,42 @@ static int fts2ba61y_wait_for_ready(struct fts2ba61y_data *ts)
 	return ret;
 }
 
+static void fts2ba61y_set_irq(struct fts2ba61y_data *ts, bool enable)
+{
+	if (!ts->irq_requested || ts->irq_enabled == enable)
+		return;
+
+	if (enable)
+		enable_irq(ts->spi->irq);
+	else
+		disable_irq(ts->spi->irq);
+
+	ts->irq_enabled = enable;
+}
+
 static int fts2ba61y_reset(struct fts2ba61y_data *ts)
 {
 	u8 cmd = FTS2BA61Y_CMD_REG_W;
 	/* the following sequence is undocumented */
 	u8 reset[FTS2BA61Y_RESET_CMD_SIZE] = { 0x20, 0x00,
 					       0x00, 0x24, 0x81 };
+	bool reenable_irq = ts->irq_enabled;
 	int ret;
 
-	disable_irq(ts->spi->irq);
+	fts2ba61y_set_irq(ts, false);
 
 	ret = fts2ba61y_write(ts, &cmd, 1, &reset[0], FTS2BA61Y_RESET_CMD_SIZE);
 	if (ret)
-		return ret;
+		goto out;
 	msleep(30);
 
 	ret = fts2ba61y_wait_for_ready(ts);
-	if (ret)
-		return ret;
 
-	enable_irq(ts->spi->irq);
+out:
+	if (reenable_irq)
+		fts2ba61y_set_irq(ts, true);
 
-	return 0;
+	return ret;
 }
 
 static int fts2ba61y_set_channels(struct fts2ba61y_data *ts)
@@ -314,26 +336,43 @@ static int fts2ba61y_set_touch_func(struct fts2ba61y_data *ts)
 	return fts2ba61y_write(ts, &cmd, 1, (u8 *)&touchtype, 2);
 }
 
-static int fts2ba61y_hw_init(struct fts2ba61y_data *ts)
+static int fts2ba61y_hw_power_on(struct fts2ba61y_data *ts, bool read_channels)
 {
 	int ret;
 
 	ret = regulator_bulk_enable(ARRAY_SIZE(ts->regulators),
-								ts->regulators);
+				    ts->regulators);
 	if (ret)
 		return ret;
 
+	ts->power_on = true;
 	msleep(140);
 
 	ret = fts2ba61y_reset(ts);
 	if (ret)
-		return ret;
+		goto err_power_off;
 
-	ret = fts2ba61y_set_channels(ts);
+	if (read_channels) {
+		ret = fts2ba61y_set_channels(ts);
+		if (ret)
+			goto err_power_off;
+	}
+
+	ret = fts2ba61y_set_touch_func(ts);
 	if (ret)
-		return ret;
+		goto err_power_off;
 
-	return fts2ba61y_set_touch_func(ts);
+	return 0;
+
+err_power_off:
+	regulator_bulk_disable(ARRAY_SIZE(ts->regulators), ts->regulators);
+	ts->power_on = false;
+	return ret;
+}
+
+static int fts2ba61y_hw_init(struct fts2ba61y_data *ts)
+{
+	return fts2ba61y_hw_power_on(ts, true);
 }
 
 static int fts2ba61y_get_event(struct fts2ba61y_data *ts, u8 *data, int *n_events)
@@ -458,32 +497,165 @@ static irqreturn_t fts2ba61y_irq_handler(int irq, void *handle)
 	return IRQ_HANDLED;
 }
 
+static int fts2ba61y_set_sense_locked(struct fts2ba61y_data *ts, bool enable)
+{
+	int ret = 0;
+
+	if (!enable) {
+		fts2ba61y_set_irq(ts, false);
+		if (ts->power_on && ts->sense_on) {
+			u8 cmd = FTS2BA61Y_CMD_SENSE_OFF;
+
+			ret = fts2ba61y_write(ts, &cmd, 1, NULL, 0);
+			if (ret)
+				dev_err(&ts->spi->dev,
+					"failed to turn off sensing: %d\n", ret);
+		}
+		ts->sense_on = false;
+		ts->resume_sense = false;
+		return ret;
+	}
+
+	ts->resume_sense = true;
+	if (!ts->power_on || ts->sense_on)
+		return 0;
+
+	{
+		u8 clear_cmd = FTS2BA61Y_CMD_CLEAR_EVENTS;
+		u8 sense_cmd = FTS2BA61Y_CMD_SENSE_ON;
+
+		ret = fts2ba61y_write(ts, &clear_cmd, 1, NULL, 0);
+		if (ret)
+			dev_dbg(&ts->spi->dev,
+				"failed to clear events: %d\n", ret);
+
+		ret = fts2ba61y_write(ts, &sense_cmd, 1, NULL, 0);
+		if (ret)
+			return ret;
+	}
+
+	ts->sense_on = true;
+	fts2ba61y_set_irq(ts, true);
+	return 0;
+}
+
 static int fts2ba61y_input_open(struct input_dev *dev)
 {
 	struct fts2ba61y_data *ts = input_get_drvdata(dev);
-	u8 cmd = FTS2BA61Y_CMD_SENSE_ON;
+	int ret;
 
-	return fts2ba61y_write(ts, &cmd, 1, NULL, 0);
+	mutex_lock(&ts->state_lock);
+	ret = fts2ba61y_set_sense_locked(ts, true);
+	mutex_unlock(&ts->state_lock);
+
+	return ret;
 }
 
 static void fts2ba61y_input_close(struct input_dev *dev)
 {
 	struct fts2ba61y_data *ts = input_get_drvdata(dev);
-	int ret;
-	u8 cmd = FTS2BA61Y_CMD_SENSE_OFF;
 
-	ret = fts2ba61y_write(ts, &cmd, 1, NULL, 0);
-	if (ret)
-		dev_err(&ts->spi->dev, "failed to turn off sensing\n");
+	mutex_lock(&ts->state_lock);
+	fts2ba61y_set_sense_locked(ts, false);
+	mutex_unlock(&ts->state_lock);
 }
+
+static ssize_t sense_enable_show(struct device *dev,
+				 struct device_attribute *attr, char *buf)
+{
+	struct fts2ba61y_data *ts = dev_get_drvdata(dev);
+	bool enabled;
+
+	mutex_lock(&ts->state_lock);
+	enabled = ts->sense_on;
+	mutex_unlock(&ts->state_lock);
+
+	return sysfs_emit(buf, "%d\n", enabled ? 1 : 0);
+}
+
+static ssize_t sense_enable_store(struct device *dev,
+				  struct device_attribute *attr,
+				  const char *buf, size_t count)
+{
+	struct fts2ba61y_data *ts = dev_get_drvdata(dev);
+	bool enable;
+	int ret;
+
+	ret = kstrtobool(buf, &enable);
+	if (ret)
+		return ret;
+
+	mutex_lock(&ts->state_lock);
+	ret = fts2ba61y_set_sense_locked(ts, enable);
+	mutex_unlock(&ts->state_lock);
+
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_RW(sense_enable);
+
+static struct attribute *fts2ba61y_attrs[] = {
+	&dev_attr_sense_enable.attr,
+	NULL,
+};
+ATTRIBUTE_GROUPS(fts2ba61y);
+
+static int fts2ba61y_pm_suspend(struct device *dev)
+{
+	struct fts2ba61y_data *ts = dev_get_drvdata(dev);
+	bool want_resume;
+
+	mutex_lock(&ts->state_lock);
+	want_resume = ts->sense_on;
+	if (ts->power_on) {
+		fts2ba61y_set_irq(ts, false);
+		if (ts->sense_on) {
+			u8 cmd = FTS2BA61Y_CMD_SENSE_OFF;
+
+			fts2ba61y_write(ts, &cmd, 1, NULL, 0);
+			ts->sense_on = false;
+		}
+		regulator_bulk_disable(ARRAY_SIZE(ts->regulators),
+				       ts->regulators);
+		ts->power_on = false;
+	}
+	ts->resume_sense = want_resume;
+	mutex_unlock(&ts->state_lock);
+
+	return 0;
+}
+
+static int fts2ba61y_pm_resume(struct device *dev)
+{
+	struct fts2ba61y_data *ts = dev_get_drvdata(dev);
+	int ret = 0;
+
+	mutex_lock(&ts->state_lock);
+	if (!ts->power_on) {
+		ret = fts2ba61y_hw_power_on(ts, false);
+		if (ret)
+			goto out;
+	}
+	if (ts->resume_sense)
+		ret = fts2ba61y_set_sense_locked(ts, true);
+out:
+	mutex_unlock(&ts->state_lock);
+	return ret;
+}
+
+static DEFINE_SIMPLE_DEV_PM_OPS(fts2ba61y_pm_ops,
+				fts2ba61y_pm_suspend,
+				fts2ba61y_pm_resume);
 
 static void fts2ba61y_power_off(void *data)
 {
 	struct fts2ba61y_data *ts = data;
 
-	disable_irq(ts->spi->irq);
-	regulator_bulk_disable(ARRAY_SIZE(ts->regulators),
-						   ts->regulators);
+	fts2ba61y_set_irq(ts, false);
+	if (ts->power_on) {
+		regulator_bulk_disable(ARRAY_SIZE(ts->regulators),
+				       ts->regulators);
+		ts->power_on = false;
+	}
 }
 
 static int fts2ba61y_probe(struct spi_device *spi) {
@@ -497,6 +669,7 @@ static int fts2ba61y_probe(struct spi_device *spi) {
 
 	ts->spi = spi;
 	mutex_init(&ts->mutex);
+	mutex_init(&ts->state_lock);
 
 	spi->mode = SPI_MODE_0;
 	spi->bits_per_word = 8;
@@ -555,7 +728,12 @@ static int fts2ba61y_probe(struct spi_device *spi) {
 					  fts2ba61y_irq_handler,
 					  IRQF_TRIGGER_LOW | IRQF_ONESHOT,
 					  "fts2ba61y_irq", ts);
-	return error;
+	if (error)
+		return error;
+
+	ts->irq_requested = true;
+	ts->irq_enabled = true;
+	return 0;
 }
 
 #ifdef CONFIG_OF
@@ -576,6 +754,8 @@ static struct spi_driver spi_touchscreen_driver = {
 	.driver = {
 		.name = FTS2BA61Y_DEV_NAME,
 		.of_match_table = of_match_ptr(spi_touchscreen_dt_ids),
+		.pm = pm_sleep_ptr(&fts2ba61y_pm_ops),
+		.dev_groups = fts2ba61y_groups,
 	},
 	.probe = fts2ba61y_probe,
 	.id_table = fts2ba61y_spi_ids,

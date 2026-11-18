@@ -1,0 +1,120 @@
+Subject: [PATCH] power: sm8450: fix ADSP and UFS idle power leaks
+
+SPDX-License-Identifier: GPL-2.0-only
+
+Fixes two idle power leaks on SM8450 (Galaxy S22 r0q):
+1. sound/soc/codecs/lpass-va-macro.c: release LPASS_HW_MACRO and
+   LPASS_HW_DCODEC Q6PRM core votes during runtime_suspend and re-acquire
+   on runtime_resume (plus trigger initial autosuspend after probe) so the
+   Hexagon ADSP can enter power collapse.
+2. drivers/ufs/host/ufs-qcom.c: guard ufs_qcom_enable_lane_clks() with
+   host->is_lane_clks_enabled to prevent double-refcounting UFS and TCXO
+   clocks across hibern8 resumes, and drop UFS ICC vote to 0 when the link
+   is not active.
+
+---
+diff --git a/sound/soc/codecs/lpass-va-macro.c b/sound/soc/codecs/lpass-va-macro.c
+--- a/sound/soc/codecs/lpass-va-macro.c
++++ b/sound/soc/codecs/lpass-va-macro.c
+@@ -1682,6 +1682,9 @@
+ 		goto err_clkout;
+ 	}
+ 
++	pm_runtime_mark_last_busy(dev);
++	pm_request_autosuspend(dev);
++
+ 	return 0;
+ 
+ err_clkout:
+@@ -1703,12 +1706,15 @@
+ {
+ 	struct va_macro *va = dev_get_drvdata(&pdev->dev);
+ 
+-	if (va->has_npl_clk)
+-		clk_disable_unprepare(va->npl);
+-
+-	clk_disable_unprepare(va->mclk);
+-	clk_disable_unprepare(va->dcodec);
+-	clk_disable_unprepare(va->macro);
++	pm_runtime_disable(&pdev->dev);
++	if (!pm_runtime_status_suspended(&pdev->dev)) {
++		if (va->has_npl_clk)
++			clk_disable_unprepare(va->npl);
++
++		clk_disable_unprepare(va->mclk);
++		clk_disable_unprepare(va->dcodec);
++		clk_disable_unprepare(va->macro);
++	}
+ 
+ 	lpass_macro_pds_exit(va->pds);
+ }
+@@ -1724,6 +1730,8 @@
+ 		clk_disable_unprepare(va->npl);
+ 
+ 	clk_disable_unprepare(va->mclk);
++	clk_disable_unprepare(va->dcodec);
++	clk_disable_unprepare(va->macro);
+ 
+ 	return 0;
+ }
+@@ -1733,8 +1741,23 @@
+ 	struct va_macro *va = dev_get_drvdata(dev);
+ 	int ret;
+ 
++	ret = clk_prepare_enable(va->macro);
++	if (ret) {
++		dev_err(va->dev, "unable to prepare macro\n");
++		return ret;
++	}
++
++	ret = clk_prepare_enable(va->dcodec);
++	if (ret) {
++		clk_disable_unprepare(va->macro);
++		dev_err(va->dev, "unable to prepare dcodec\n");
++		return ret;
++	}
++
+ 	ret = clk_prepare_enable(va->mclk);
+ 	if (ret) {
++		clk_disable_unprepare(va->dcodec);
++		clk_disable_unprepare(va->macro);
+ 		dev_err(va->dev, "unable to prepare mclk\n");
+ 		return ret;
+ 	}
+@@ -1743,6 +1766,8 @@
+ 		ret = clk_prepare_enable(va->npl);
+ 		if (ret) {
+ 			clk_disable_unprepare(va->mclk);
++			clk_disable_unprepare(va->dcodec);
++			clk_disable_unprepare(va->macro);
+ 			dev_err(va->dev, "unable to prepare npl\n");
+ 			return ret;
+ 		}
+diff --git a/drivers/ufs/host/ufs-qcom.c b/drivers/ufs/host/ufs-qcom.c
+--- a/drivers/ufs/host/ufs-qcom.c
++++ b/drivers/ufs/host/ufs-qcom.c
+@@ -356,6 +356,9 @@
+ {
+ 	int err;
+ 
++	if (host->is_lane_clks_enabled)
++		return 0;
++
+ 	err = clk_bulk_prepare_enable(host->num_clks, host->clks);
+ 	if (err)
+ 		return err;
+@@ -1482,8 +1485,12 @@
+ 			if (ufs_qcom_is_link_hibern8(hba))
+ 				ufs_qcom_disable_lane_clks(host);
+ 
+-			ufs_qcom_icc_set_bw(host, ufs_qcom_bw_table[MODE_MIN][0][0].mem_bw,
+-					    ufs_qcom_bw_table[MODE_MIN][0][0].cfg_bw);
++			if (!ufs_qcom_is_link_active(hba))
++				ufs_qcom_icc_set_bw(host, 0, 0);
++			else
++				ufs_qcom_icc_set_bw(host,
++						    ufs_qcom_bw_table[MODE_MIN][0][0].mem_bw,
++						    ufs_qcom_bw_table[MODE_MIN][0][0].cfg_bw);
+ 		}
+ 		break;
+ 	}

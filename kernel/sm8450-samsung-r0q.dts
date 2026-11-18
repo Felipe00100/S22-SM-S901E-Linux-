@@ -1287,13 +1287,16 @@
 		llcc_bwmon_opp_table: opp-table {
 			compatible = "operating-points-v2";
 
-			opp-0 { opp-peak-kBps = <2086000>; };
-			opp-1 { opp-peak-kBps = <2929000>; };
-			opp-2 { opp-peak-kBps = <5931000>; };
-			opp-3 { opp-peak-kBps = <6515000>; };
-			opp-4 { opp-peak-kBps = <7980000>; };
-			opp-5 { opp-peak-kBps = <10437000>; };
-			opp-6 { opp-peak-kBps = <12191000>; };
+			opp-0 { opp-peak-kBps = <762000>; };
+			opp-1 { opp-peak-kBps = <1720000>; };
+			opp-2 { opp-peak-kBps = <2086000>; };
+			opp-3 { opp-peak-kBps = <2597000>; };
+			opp-4 { opp-peak-kBps = <2929000>; };
+			opp-5 { opp-peak-kBps = <5931000>; };
+			opp-6 { opp-peak-kBps = <6515000>; };
+			opp-7 { opp-peak-kBps = <7980000>; };
+			opp-8 { opp-peak-kBps = <10437000>; };
+			opp-9 { opp-peak-kBps = <12191000>; };
 		};
 	};
 
@@ -1308,12 +1311,14 @@
 		cpu_bwmon_opp_table: opp-table {
 			compatible = "operating-points-v2";
 
-			opp-0 { opp-peak-kBps = <4577000>; };
-			opp-1 { opp-peak-kBps = <7110000>; };
-			opp-2 { opp-peak-kBps = <9155000>; };
-			opp-3 { opp-peak-kBps = <12298000>; };
-			opp-4 { opp-peak-kBps = <14236000>; };
-			opp-5 { opp-peak-kBps = <16265000>; };
+			opp-0 { opp-peak-kBps = <1144000>; };
+			opp-1 { opp-peak-kBps = <2288000>; };
+			opp-2 { opp-peak-kBps = <4577000>; };
+			opp-3 { opp-peak-kBps = <7110000>; };
+			opp-4 { opp-peak-kBps = <9155000>; };
+			opp-5 { opp-peak-kBps = <12298000>; };
+			opp-6 { opp-peak-kBps = <14236000>; };
+			opp-7 { opp-peak-kBps = <16265000>; };
 		};
 	};
 };

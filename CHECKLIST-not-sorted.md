@@ -16,6 +16,7 @@
 - [x] **RAM**: +854 MiB total reclaimed, **7.0 GiB (7,161 MiB) usable** (full 32 MiB `cdsp_mem`, modem/camera/CVP kept)
 - [x] **On-screen keyboard + auto-hide**: `plasma-keyboard` as KWin input method + `s22-kbd-autohide.service` (tapping above keyboard hides it and re-arms for next text field)
 - [x] **Charging + battery % + charge limit**: `max77705-charger` + `max170xx_battery` linked via `power-supplies = <&max77705_charger>`, accurate 2 mOhm scaling (`3,700 mAh`), USB-C Rp 3.0 A `CHGIN_ILIM`, `MAX77705_AICL_I` 345 Hz IRQ storm masked (`0 IRQs/s`), and `charge_control_end_threshold` (`50-100%`) + `s22-charge-limit`
+- [x] **Idle power optimizations**: `lpass-va-macro` releases `LPASS_HW_MACRO`/`LPASS_HW_DCODEC` on runtime suspend (ADSP power collapse `0.017%` -> `100%` idle), `fts2ba61y` `sense_enable` gates touch scanning/IRQ on `dpms=Off` via `panel-samsung-s6e3fac` `KOBJ_CHANGE` uevent + `s22-display-extrasd` netlink monitor & adds system sleep `pm_ops`, and `org.kde.plasma.quicksetting.flashlight` drops its 2.5 s polling timer (`ufs-qcom` lane clk refcount/ICC fix, `dwc3-qcom` `USB_ROLE_NONE` DDR ICC gating, and `llcc_bwmon`/`cpu_bwmon` low idle OPPs landed in patches/DTS, pending `uniLoader` rebuild)
 - [x] **USB auto-connect at boot** (MAX77705 Type-C role switch; SSH ~25 s after boot, no replug)
 - [x] **Firewall** (nftables)
 - [x] **Apps**: QMLKonsole, Google Chrome (Flathub ARM64), Discover + Flathub, KRecorder (GStreamer backend), Dolphin, Plasma Camera
