@@ -14,6 +14,7 @@ import glob
 import json
 import os
 import pwd
+import socket
 import subprocess
 import time
 from pathlib import Path
@@ -25,6 +26,7 @@ from gi.repository import Gio, GLib
 
 CONF_PATH = Path("/etc/s22-display.conf")
 STATE_JSON = Path("/run/s22-display-state.json")
+TOUCH_SENSE_PATH = Path("/sys/bus/spi/devices/spi0.0/sense_enable")
 
 
 def find_panel() -> Path | None:
@@ -72,6 +74,10 @@ class S22DisplayDaemon:
         self.touch_fds: list[int] = []
         self.user_touched_during_wake = False
         self.session_poll_id = 0
+        self.uevent_sock: socket.socket | None = None
+        self.uevent_watch_id = 0
+        self.uevent_sync_id = 0
+        self.last_touch_sense: bool | None = None
 
     def parse_conf(self) -> dict[str, str]:
         cfg = {
@@ -150,10 +156,19 @@ class S22DisplayDaemon:
         self.sync_sensor_claims()
         self.publish_state()
 
+    def sync_touch_sense(self, enable: bool) -> None:
+        target = "1" if enable else "0"
+        if self.last_touch_sense is enable and read_sysfs(TOUCH_SENSE_PATH) == target:
+            return
+        write_sysfs(TOUCH_SENSE_PATH, target)
+        self.last_touch_sense = enable
+
     def sync_sensor_claims(self) -> None:
+        screen_on = self.is_screen_on()
+        want_touch = screen_on or (self.conf.get("AOD_ENABLED", "0") == "1")
+        self.sync_touch_sense(want_touch)
         if not self.sensor_proxy:
             return
-        screen_on = self.is_screen_on()
         want_als = screen_on and (self.conf.get("HBM_AUTO", "1") == "1")
         want_prox = (self.conf.get("AOD_ENABLED", "0") == "1") and (self.conf.get("AOD_POCKET_GUARD", "1") == "1")
 
@@ -207,6 +222,8 @@ class S22DisplayDaemon:
                 write_sysfs(self.panel / "aod_mode", "0" if near else "1")
 
     def run_dpms(self, on: bool) -> None:
+        if on:
+            self.sync_touch_sense(True)
         for rt in sorted(Path("/run/user").glob("*")):
             wsocks = [s for s in sorted(rt.glob("wayland-[0-9]")) if s.is_socket()]
             if not wsocks:
@@ -466,6 +483,48 @@ class S22DisplayDaemon:
             else None,
         )
 
+    def _on_uevent_deferred_sync(self) -> bool:
+        self.uevent_sync_id = 0
+        self.sync_sensor_claims()
+        return False
+
+    def _on_uevent_io(self, _fd: int, _cond: int) -> bool:
+        if not self.uevent_sock:
+            return False
+        matched = False
+        while True:
+            try:
+                pkt = self.uevent_sock.recv(4096)
+            except BlockingIOError:
+                break
+            except OSError:
+                return False
+            if b"change@" in pkt and (
+                b"ae94000.dsi.0" in pkt or b"card0-DSI-1" in pkt or b"mipi-dsi" in pkt
+            ):
+                matched = True
+        if matched:
+            self.sync_sensor_claims()
+            if self.uevent_sync_id:
+                GLib.source_remove(self.uevent_sync_id)
+            self.uevent_sync_id = GLib.timeout_add(150, self._on_uevent_deferred_sync)
+        return True
+
+    def setup_uevent_monitor(self) -> None:
+        try:
+            sock = socket.socket(
+                socket.AF_NETLINK,
+                socket.SOCK_DGRAM | socket.SOCK_NONBLOCK,
+                getattr(socket, "NETLINK_KOBJECT_UEVENT", 15),
+            )
+            sock.bind((0, 1))
+            self.uevent_sock = sock
+            self.uevent_watch_id = GLib.io_add_watch(
+                sock.fileno(), GLib.IO_IN, self._on_uevent_io
+            )
+        except OSError:
+            self.uevent_sock = None
+
 
 def main() -> int:
     panel = None
@@ -479,6 +538,7 @@ def main() -> int:
 
     daemon = S22DisplayDaemon(panel)
     daemon.setup_dbus()
+    daemon.setup_uevent_monitor()
     daemon.apply_conf()
     daemon.setup_conf_monitor()
 
