@@ -1212,6 +1212,7 @@ static int s6e3fac_unprepare(struct drm_panel *panel)
 	regulator_bulk_disable(ARRAY_SIZE(s6e3fac_supplies), ctx->supplies);
 	ctx->prepared = false;
 	ctx->applied_rr = 0;
+	ctx->effective_rr = 0;
 
 	mutex_unlock(&ctx->lock);
 	kobject_uevent(&ctx->dsi->dev.kobj, KOBJ_CHANGE);
