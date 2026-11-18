@@ -61,15 +61,6 @@ diff --git a/drivers/gpu/drm/msm/adreno/a6xx_catalog.c b/drivers/gpu/drm/msm/adr
 index a98d550..d690102 100644
 --- a/drivers/gpu/drm/msm/adreno/a6xx_catalog.c
 +++ b/drivers/gpu/drm/msm/adreno/a6xx_catalog.c
-@@ -1485,7 +1485,7 @@ static const struct adreno_info a7xx_gpus[] = {
- 			[ADRENO_FW_GMU] = "gmu_gen70000.bin",
- 		},
- 		.gmem = SZ_2M,
--		.inactive_period = DRM_MSM_INACTIVE_PERIOD,
-+		.inactive_period = 200,
- 		.quirks = ADRENO_QUIRK_HAS_CACHED_COHERENT |
- 			  ADRENO_QUIRK_HAS_HW_APRIV |
- 			  ADRENO_QUIRK_PREEMPTION,
 @@ -1498,6 +1498,17 @@ static const struct adreno_info a7xx_gpus[] = {
  			.dyn_pwrup_reglist = &a7xx_dyn_pwrup_reglist,
  			.gbif_cx = a640_gbif,
@@ -727,12 +718,13 @@ index 33af6b9..09816a9 100644
  
  /*
   * Power Management:
-@@ -885,6 +888,31 @@ msm_gpu_create_private_vm(struct msm_gpu *gpu, struct task_struct *task,
+@@ -885,6 +888,37 @@ msm_gpu_create_private_vm(struct msm_gpu *gpu, struct task_struct *task,
  	return vm;
  }
  
-+/* Pin GPU completion IRQ to the fastest online CPU (e.g. prime core) so retire
-+ * and fence wakeups avoid sleeping LITTLE cores and SCHED_OTHER throttling.
++/* Pin GPU completion IRQ to an online Mid-cluster core (e.g. Cortex-A710 CPU 4
++ * on SM8450) so retire and fence wakeups avoid sleeping LITTLE cores without
++ * repeatedly waking the Cortex-X2 Prime core (CPU 7) during light desktop UI.
 + */
 +void msm_gpu_pin_irq(struct msm_gpu *gpu)
 +{
@@ -744,14 +736,19 @@ index 33af6b9..09816a9 100644
 +
 +	cpus_read_lock();
 +	for_each_online_cpu(cpu) {
-+		unsigned int max_freq = cpufreq_quick_get_max(cpu);
++		unsigned int max_freq;
 +
-+		if (best_cpu < 0 || max_freq >= best_freq) {
++		if (cpu >= 7)
++			continue;
++		max_freq = cpufreq_quick_get_max(cpu);
++		if (best_cpu < 0 || max_freq > best_freq) {
 +			best_freq = max_freq;
 +			best_cpu = cpu;
 +		}
 +	}
-+	if (best_cpu >= 0)
++	if (best_cpu < 0)
++		best_cpu = cpumask_any(cpu_online_mask);
++	if (best_cpu < nr_cpu_ids)
 +		irq_set_affinity(gpu->irq, cpumask_of(best_cpu));
 +	cpus_read_unlock();
 +}
@@ -759,7 +756,7 @@ index 33af6b9..09816a9 100644
  int msm_gpu_init(struct drm_device *drm, struct platform_device *pdev,
  		struct msm_gpu *gpu, const struct msm_gpu_funcs *funcs,
  		const char *name, struct msm_gpu_config *config)
-@@ -907,8 +935,20 @@ int msm_gpu_init(struct drm_device *drm, struct platform_device *pdev,
+@@ -907,8 +941,20 @@ int msm_gpu_init(struct drm_device *drm, struct platform_device *pdev,
  
  	sched_set_fifo(gpu->worker->task);
  
@@ -780,7 +777,7 @@ index 33af6b9..09816a9 100644
  	init_waitqueue_head(&gpu->retire_event);
  	kthread_init_work(&gpu->retire_work, retire_worker);
  	kthread_init_work(&gpu->recover_work, recover_worker);
-@@ -946,6 +986,8 @@ int msm_gpu_init(struct drm_device *drm, struct platform_device *pdev,
+@@ -946,6 +992,8 @@ int msm_gpu_init(struct drm_device *drm, struct platform_device *pdev,
  		goto fail;
  	}
  
@@ -789,7 +786,7 @@ index 33af6b9..09816a9 100644
  	ret = get_clocks(pdev, gpu);
  	if (ret)
  		goto fail;
-@@ -1033,6 +1075,11 @@ fail:
+@@ -1033,6 +1081,11 @@ fail:
  		gpu->rb[i] = NULL;
  	}
  
@@ -801,7 +798,7 @@ index 33af6b9..09816a9 100644
  	msm_gem_kernel_put(gpu->memptrs_bo, gpu->vm);
  
  	platform_set_drvdata(pdev, NULL);
-@@ -1050,6 +1097,11 @@ void msm_gpu_cleanup(struct msm_gpu *gpu)
+@@ -1050,6 +1103,11 @@ void msm_gpu_cleanup(struct msm_gpu *gpu)
  		gpu->rb[i] = NULL;
  	}
  
@@ -886,7 +883,8 @@ index 2e1d5c3..c3e1912 100644
  }
  
  static void msm_devfreq_boost_work(struct kthread_work *work)
-@@ -264,77 +266,88 @@ static void msm_devfreq_boost_work(struct kthread_work *work)
+@@ -264,27 +266,34 @@ static void msm_devfreq_boost_work(struct kthread_work *work)
++{
  	struct msm_gpu_devfreq *df = container_of(work,
  			struct msm_gpu_devfreq, boost_work.work);
  
@@ -906,8 +904,7 @@ index 2e1d5c3..c3e1912 100644
  
 -	freq = get_freq(gpu);
 -	freq *= factor;
-+	freq = max_t(uint64_t, (uint64_t)get_freq(gpu) * factor, gpu->fast_rate);
-+	freq = min_t(uint64_t, freq, gpu->fast_rate);
++	freq = min_t(uint64_t, (uint64_t)get_freq(gpu) * factor, gpu->fast_rate);
  
  	/*
  	 * A nice little trap is that PM QoS operates in terms of KHz,
@@ -922,21 +919,15 @@ index 2e1d5c3..c3e1912 100644
 +		dev_pm_qos_update_request(&df->boost_freq, boost_khz);
 +	}
  
-+	WRITE_ONCE(df->boost_rearm_at,
-+		   ktime_add_ms(ktime_get(), 12));
  	msm_hrtimer_queue_work(&df->boost_work,
--			       ms_to_ktime(msm_devfreq_profile.polling_ms),
-+			       ms_to_ktime(msm_devfreq_profile.polling_ms * 2),
- 			       HRTIMER_MODE_REL);
- }
- 
+ 			       ms_to_ktime(msm_devfreq_profile.polling_ms),
+@@ -294,47 +303,40 @@
  void msm_devfreq_active(struct msm_gpu *gpu)
  {
  	struct msm_gpu_devfreq *df = &gpu->devfreq;
--	unsigned int idle_time;
-+	ktime_t idle_start;
-+	s64 idle_ms = 0;
- 	unsigned long target_freq;
++	unsigned long target_freq;
+ 	unsigned int idle_time;
+-	unsigned long target_freq;
 +	int timer_was_armed;
  
  	if (!has_devfreq(gpu))
@@ -944,52 +935,41 @@ index 2e1d5c3..c3e1912 100644
  
  	/*
 -	 * Cancel any pending transition to idle frequency:
--	 */
--	cancel_idle_work(df);
--
--	/*
--	 * Hold devfreq lock to synchronize with get_dev_status()/
--	 * target() callbacks
 +	 * Fast-path cancel: if hrtimer_cancel() > 0 and idle_freq == 0, the
-+	 * 50ms idle timer had not expired yet, so idle_work.work was never
++	 * idle timer had not expired yet, so idle_work.work was never
 +	 * queued on gpu->worker and kthread_cancel_work_sync() can be skipped.
  	 */
--	mutex_lock(&df->devfreq->lock);
+-	cancel_idle_work(df);
 +	timer_was_armed = hrtimer_cancel(&df->idle_work.timer);
 +	if (!timer_was_armed || READ_ONCE(df->idle_freq))
 +		kthread_cancel_work_sync(&df->idle_work.work);
  
--	target_freq = df->idle_freq;
--
--	idle_time = ktime_to_ms(ktime_sub(ktime_get(), df->idle_time));
--
--	df->idle_freq = 0;
-+	idle_start = xchg(&df->idle_start, 0);
-+	if (idle_start)
-+		idle_ms = ktime_to_ms(ktime_sub(ktime_get(), idle_start));
- 
  	/*
+-	 * Hold devfreq lock to synchronize with get_dev_status()/
+-	 * target() callbacks
++	 * Steady-state fast path: when idle_freq == 0, idle_work never clamped
++	 * the GPU, so skip devfreq->lock completely and let simple_ondemand
++	 * scale smoothly across intermediate OPPs instead of pinning fast_rate.
+ 	 */
++	if (likely(!READ_ONCE(df->idle_freq)))
++		return;
++
+ 	mutex_lock(&df->devfreq->lock);
+-
+ 	target_freq = df->idle_freq;
+-
+ 	idle_time = ktime_to_ms(ktime_sub(ktime_get(), df->idle_time));
+-
+ 	df->idle_freq = 0;
+-
+-	/*
 -	 * We could have become active again before the idle work had a
 -	 * chance to run, in which case the df->idle_freq would have
 -	 * still been zero.  In this case, no need to change freq.
-+	 * Steady-state fast path: when idle_freq == 0, idle_work never clamped
-+	 * the GPU, so skip devfreq->lock completely and refresh the active
-+	 * boost lease at most once per polling_ms (16 ms) instead of on every
-+	 * submit (~62 Hz vs ~40,000 Hz), keeping bursty workloads at fast_rate
-+	 * without PM QoS or hrtimer contention.
- 	 */
+-	 */
 -	if (target_freq)
 -		msm_devfreq_target(&gpu->pdev->dev, &target_freq, 0);
-+	if (likely(!READ_ONCE(df->idle_freq))) {
-+		if (idle_ms >= (msm_devfreq_profile.polling_ms / 2) ||
-+		    !ktime_before(ktime_get(), READ_ONCE(df->boost_rearm_at)))
-+			msm_devfreq_boost(gpu, 8);
-+		return;
-+	}
- 
-+	mutex_lock(&df->devfreq->lock);
-+	target_freq = max_t(unsigned long, df->idle_freq, gpu->fast_rate);
-+	df->idle_freq = 0;
+-
 +	WRITE_ONCE(df->cur_boost_khz, 0);
 +	msm_devfreq_target(&gpu->pdev->dev, &target_freq, 0);
  	mutex_unlock(&df->devfreq->lock);
@@ -1000,19 +980,18 @@ index 2e1d5c3..c3e1912 100644
 -	 * the governor to ramp up the freq.. so give some boost
 -	 */
 -	if (idle_time > msm_devfreq_profile.polling_ms) {
--		msm_devfreq_boost(gpu, 2);
++	if (idle_time > msm_devfreq_profile.polling_ms)
+ 		msm_devfreq_boost(gpu, 2);
 -	}
-+	msm_devfreq_boost(gpu, 8);
  }
  
  
-@@ -370,6 +383,7 @@ void msm_devfreq_idle(struct msm_gpu *gpu)
+@@ -370,6 +372,6 @@ void msm_devfreq_idle(struct msm_gpu *gpu)
  	if (!has_devfreq(gpu))
  		return;
  
 -	msm_hrtimer_queue_work(&df->idle_work, ms_to_ktime(1),
-+	WRITE_ONCE(df->idle_start, ktime_get());
-+	msm_hrtimer_queue_work(&df->idle_work, ms_to_ktime(50),
++	msm_hrtimer_queue_work(&df->idle_work, ms_to_ktime(16),
  			       HRTIMER_MODE_REL);
  }
 diff --git a/drivers/gpu/drm/msm/msm_ringbuffer.c b/drivers/gpu/drm/msm/msm_ringbuffer.c
