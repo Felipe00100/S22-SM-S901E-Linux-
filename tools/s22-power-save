@@ -19,4 +19,14 @@ if [ -w /sys/class/fingerprint/fingerprint/power_enable ]; then
   echo 0 > /sys/class/fingerprint/fingerprint/power_enable 2>/dev/null || true
 fi
 
+# 4. Allow unprivileged desktop/CLI battery charge limit control & restore saved limit
+if [ -e /sys/class/power_supply/max170xx_battery/charge_control_end_threshold ]; then
+  chmod 0666 /sys/class/power_supply/max170xx_battery/charge_control_end_threshold 2>/dev/null || true
+  touch /etc/s22-charge-limit.conf 2>/dev/null || true
+  chmod 0666 /etc/s22-charge-limit.conf 2>/dev/null || true
+  if [ -s /etc/s22-charge-limit.conf ]; then
+    cat /etc/s22-charge-limit.conf > /sys/class/power_supply/max170xx_battery/charge_control_end_threshold 2>/dev/null || true
+  fi
+fi
+
 echo "S22 power-save policy applied: ASPM=$(cat /sys/module/pcie_aspm/parameters/policy 2>/dev/null || echo N/A)"
