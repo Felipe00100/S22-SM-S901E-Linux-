@@ -46,6 +46,7 @@ for p in \
 	"$T/max77705-typec-review-fixes.patch" \
 	"$U/local-max77705-usbc-typec-rp-ilim.patch" \
 	"$T/dwc3-host-power-lost.patch" \
+	"$U/local-max77705-charger-mask-aicl-irq.patch" \
 	"$U/local-qcom-q6v5-disable-handover-irq.patch" \
 	; do
 	echo "  $(basename "$p")"
