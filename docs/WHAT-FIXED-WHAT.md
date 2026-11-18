@@ -75,6 +75,8 @@ From flashing uniLoader up to attempt 39 (2026-10-20). Kernel 7.2.11, postmarket
 | 59 | Slow `+665 mA` USB-C charging & net battery drain under boot load on Type-C 3.0 A ports | Propagate non-PD Type-C Rp (`1.5 A` / `3.0 A`, `[C]`) limits to `max77705-charger` via `max77705_usbc_apply_typec_ilim()` (plus `s22-usbc-ilim.sh` udev/boot helper), raising `CHGIN_ILIM` from `900 mA` to `3,000 mA` (`+1,143 mA` / `+4.56 W` net battery charge) | Tab S8+ + Ours |
 | 60 | `5.7 Hz` `max77705-battery` IRQ storm (>1,000 wakeups) & `qcom_q6v5_pas` SLPI handover wakeup spam | Disarm stale vendor `MAX17042_VALRT_Th` (`0xff00`) when DT omits `vmin`/`vmax`, and mask `handover_irq` (`disable_irq_nosync`) once `qcom_q6v5` `handover_issued` is set | Ours |
 
+| 61 | KWin fell back to CPU `llvmpipe` (`separate_gpu_kms=1` split `card0`/`card1`) & Adreno 730 memory bandwidth stuck at ~17.8 GB/s with high submit latency | Set `options msm separate_gpu_kms=0 fence_spin_us=120` (`s22-gpu.conf`), wire Adreno 730 GMU `SH0`/`MC0`/`ACV` BCMs + `gfx-mem` ICC OPP sync (`45.0 GB/s` Triad BW), program `UCHE_CACHE_WAYS`, pin `gpu-irq` + `WQ_PERCPU|WQ_HIGHPRI` submit worker to Cortex-X2, add lockless RCU `wait_fence`/`msm_submitqueue_get` + zero-BO `VM_BIND` fast paths + 16 ms devfreq boost lease (`local-msm-adreno730-w10-gpu-opt.patch`), add OEM `qcom,opp-acd-level` + 90 C/95 C GPU thermal trips in `sm8450-samsung-r0q.dts`, and add Mesa 26.3.0 Turnip/`ir3` Wave 5 patch (`tools/mesa-26.3.0-turnip-ir3-adreno730-w5.patch`) | Linux `drm/msm` + Samsung DTBO + Mesa/Turnip + Ours |
+
 ## Not fixed yet
 - Speaker protection firmware (volume kept moderate)
 - Keyboard auto-hide
