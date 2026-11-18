@@ -1,4 +1,4 @@
-From: YOUR NAME <you@example.com>
+From: Felipe00100 <326293409+Felipe00100@users.noreply.github.com>
 Subject: [PATCH] PCI: qcom: Parse iommu-map entries using #iommu-cells
 
 qcom_pcie_config_sid_1_9_0() reads "iommu-map" as an array of fixed
@@ -38,6 +38,7 @@ the parsing logic, not on hardware.
 
 Fixes: 9b10e56647fa ("arm64: dts: qcom: sm8450: Fix the PCIe iommu-map entries")
 Assisted-by: Claude:claude-opus-5-5
+Signed-off-by: Felipe00100 <326293409+Felipe00100@users.noreply.github.com>
 ---
 Note: the same iommu-map DT series also converted sm8250, sm8350, sm8550,
 sm8650 and others that use this function, so they are probably affected
