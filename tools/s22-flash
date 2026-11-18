@@ -1,0 +1,79 @@
+#!/bin/sh
+set -eu
+
+S2M="/sys/class/leds/s2mpb02:white:flash"
+QCOM0="/sys/class/leds/white:flash-0"
+
+cmd="${1:-status}"
+
+case "$cmd" in
+  torch|on)
+    lvl="${2:-8}"
+    [ "$cmd" = "on" ] && [ $# -lt 2 ] && lvl=8
+    if [ -d "$S2M" ]; then
+      echo "$lvl" > "$S2M/brightness"
+    fi
+    for ch in /sys/class/leds/white:flash-*; do
+      [ -d "$ch" ] || continue
+      maxb=$(cat "$ch/max_brightness" 2>/dev/null || echo 0)
+      if [ "$maxb" -gt 0 ]; then
+        if [ "$lvl" -eq 0 ]; then
+          echo 0 > "$ch/brightness"
+        else
+          # Scale 1..15 to channel torch microamps/brightness
+          val=$(( (lvl * maxb + 14) / 15 ))
+          [ "$val" -gt "$maxb" ] && val="$maxb"
+          echo "$val" > "$ch/brightness" 2>/dev/null || true
+        fi
+      fi
+    done
+    echo "Torch level set to $lvl/15"
+    ;;
+  off)
+    [ -d "$S2M" ] && echo 0 > "$S2M/flash_strobe" 2>/dev/null || true
+    [ -d "$S2M" ] && echo 0 > "$S2M/brightness" 2>/dev/null || true
+    for ch in /sys/class/leds/white:flash-*; do
+      [ -d "$ch" ] || continue
+      echo 0 > "$ch/flash_strobe" 2>/dev/null || true
+      echo 0 > "$ch/brightness" 2>/dev/null || true
+    done
+    echo "Flash/Torch OFF"
+    ;;
+  strobe|flash)
+    ma="${2:-1000}"
+    ms="${3:-200}"
+    ua=$(( ma * 1000 ))
+    us=$(( ms * 1000 ))
+    if [ -d "$S2M" ]; then
+      echo "$ua" > "$S2M/flash_brightness"
+      echo "$us" > "$S2M/flash_timeout"
+      echo 1 > "$S2M/flash_strobe"
+    fi
+    for ch in /sys/class/leds/white:flash-*; do
+      [ -d "$ch" ] || continue
+      maxf=$(cat "$ch/max_flash_brightness" 2>/dev/null || echo 1000000)
+      t_ua="$ua"
+      [ "$t_ua" -gt "$maxf" ] && t_ua="$maxf"
+      echo "$t_ua" > "$ch/flash_brightness" 2>/dev/null || true
+      echo "$us" > "$ch/flash_timeout" 2>/dev/null || true
+      echo 1 > "$ch/flash_strobe" 2>/dev/null || true
+    done
+    echo "Strobe triggered: ${ma} mA for ${ms} ms"
+    ;;
+  status|info)
+    echo "=== S22 Camera Flash / Torch Status ==="
+    if [ -d "$S2M" ]; then
+      echo "S2MPB02 FLED ($S2M):"
+      echo "  brightness=$(cat "$S2M/brightness")/$(cat "$S2M/max_brightness") flash_uA=$(cat "$S2M/flash_brightness") timeout_us=$(cat "$S2M/flash_timeout") gpio_mode=$((cat "$S2M/device/gpio_mode" 2>/dev/null || echo 1))"
+      echo "  regs: $((cat "$S2M/device/fled_regs" 2>/dev/null || echo active))"
+    fi
+    for ch in /sys/class/leds/white:flash-*; do
+      [ -d "$ch" ] || continue
+      echo "$(basename "$ch"): brightness=$(cat "$ch/brightness")/$(cat "$ch/max_brightness") max_flash_uA=$(cat "$ch/max_flash_brightness") fault=$(cat "$ch/flash_fault")"
+    done
+    ;;
+  *)
+    echo "Usage: s22-flash {torch [0..15]|on|off|strobe [mA] [ms]|status}" >&2
+    exit 1
+    ;;
+esac

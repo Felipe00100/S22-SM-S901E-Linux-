@@ -69,6 +69,7 @@ struct imx563_mode {
 	u32 width;
 	u32 height;
 	u32 hts;
+	u32 vts_min;
 	u32 vts_def;
 	u64 pixel_rate;
 	u32 link_freq_idx;
@@ -82,7 +83,8 @@ static const struct imx563_mode imx563_modes[] = {
 		.width = 4032,
 		.height = 3024,
 		.hts = 17168,
-		.vts_def = 8002,
+		.vts_min = 16004,
+		.vts_def = 16004,
 		.pixel_rate = 1300147200ULL,
 		.link_freq_idx = 0,
 		.crop = {
@@ -98,7 +100,8 @@ static const struct imx563_mode imx563_modes[] = {
 		.width = 2016,
 		.height = 1512,
 		.hts = 13024,
-		.vts_def = 10544,
+		.vts_min = 10544,
+		.vts_def = 13180,
 		.pixel_rate = 1562803200ULL,
 		.link_freq_idx = 1,
 		.crop = {
@@ -281,7 +284,7 @@ static int imx563_init_controls(struct imx563 *imx563)
 		imx563->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	imx563->vblank = v4l2_ctrl_new_std(hdlr, &imx563_ctrl_ops,
-					   V4L2_CID_VBLANK, IMX563_VBLANK_MIN,
+					   V4L2_CID_VBLANK, mode->vts_min - mode->height,
 					   IMX563_VTS_MAX - mode->height, 1,
 					   vblank_def);
 
@@ -396,7 +399,7 @@ static int imx563_set_pad_format(struct v4l2_subdev *sd,
 		__v4l2_ctrl_s_ctrl(imx563->link_freq, mode->link_freq_idx);
 		__v4l2_ctrl_s_ctrl_int64(imx563->pixel_rate, mode->pixel_rate);
 		__v4l2_ctrl_modify_range(imx563->hblank, hblank, hblank, 1, hblank);
-		__v4l2_ctrl_modify_range(imx563->vblank, IMX563_VBLANK_MIN,
+		__v4l2_ctrl_modify_range(imx563->vblank, mode->vts_min - mode->height,
 					 IMX563_VTS_MAX - mode->height, 1, vblank);
 		__v4l2_ctrl_s_ctrl(imx563->vblank, vblank);
 		__v4l2_ctrl_modify_range(imx563->exposure, IMX563_EXPOSURE_MIN,

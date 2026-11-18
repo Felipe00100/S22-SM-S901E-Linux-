@@ -80,6 +80,7 @@ struct s5kgn3_mode {
 	u32 width;
 	u32 height;
 	u32 hts;
+	u32 vts_min;
 	u32 vts_def;
 	u64 pixel_rate;
 	u32 link_freq_idx;
@@ -93,7 +94,8 @@ static const struct s5kgn3_mode s5kgn3_modes[] = {
 		.width = 4080,
 		.height = 3060,
 		.hts = 5472,
-		.vts_def = 11696,
+		.vts_min = 23392,
+		.vts_def = 23392,
 		.pixel_rate = 2267596800ULL,
 		.link_freq_idx = 0,
 		.crop = {
@@ -109,7 +111,8 @@ static const struct s5kgn3_mode s5kgn3_modes[] = {
 		.width = 2040,
 		.height = 1532,
 		.hts = 9152,
-		.vts_def = 6992,
+		.vts_min = 6992,
+		.vts_def = 8740,
 		.pixel_rate = 1768550400ULL,
 		.link_freq_idx = 1,
 		.crop = {
@@ -507,7 +510,7 @@ static int s5kgn3_init_controls(struct s5kgn3 *s5kgn3)
 		s5kgn3->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	s5kgn3->vblank = v4l2_ctrl_new_std(hdlr, &s5kgn3_ctrl_ops,
-					   V4L2_CID_VBLANK, S5KGN3_VBLANK_MIN,
+					   V4L2_CID_VBLANK, mode->vts_min - mode->height,
 					   S5KGN3_VTS_MAX - mode->height, 1,
 					   vblank_def);
 
@@ -622,7 +625,7 @@ static int s5kgn3_set_pad_format(struct v4l2_subdev *sd,
 		__v4l2_ctrl_s_ctrl(s5kgn3->link_freq, mode->link_freq_idx);
 		__v4l2_ctrl_s_ctrl_int64(s5kgn3->pixel_rate, mode->pixel_rate);
 		__v4l2_ctrl_modify_range(s5kgn3->hblank, hblank, hblank, 1, hblank);
-		__v4l2_ctrl_modify_range(s5kgn3->vblank, S5KGN3_VBLANK_MIN,
+		__v4l2_ctrl_modify_range(s5kgn3->vblank, mode->vts_min - mode->height,
 					 S5KGN3_VTS_MAX - mode->height, 1, vblank);
 		__v4l2_ctrl_s_ctrl(s5kgn3->vblank, vblank);
 		__v4l2_ctrl_modify_range(s5kgn3->exposure, S5KGN3_EXPOSURE_MIN,
