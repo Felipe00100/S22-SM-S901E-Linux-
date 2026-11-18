@@ -50,6 +50,7 @@ for p in \
 	"$U/local-dwc3-qcom-role-vbus-override.patch" \
 	"$U/local-max77705-typec-dp-altmode.patch" \
 	"$U/local-max77705-usbc-typec-rp-ilim.patch" \
+	"$U/local-max77705-charger-mask-aicl-irq.patch" \
 	"$U/local-sm8450-ipa-v5.1.patch" \
 	"$U/local-ak7375-s22-vcm.patch" \
 	"$U/local-qcom-q6v5-disable-handover-irq.patch" \
