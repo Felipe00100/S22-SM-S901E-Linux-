@@ -41,6 +41,7 @@ Wi-Fi is the one big item still open. Even the failed Wi-Fi attempts are useful:
 | 11-12 | - | QMP USB3+DP combo PHY (4nm S22 tuning), built-in Type-C/SBU AUX mux, SVDM `0xff01` + DRM HPD bridge in `max77705-usbc`, `&mdss_dp0`, +342 MiB Android-only RAM reclaim | **USB 3.0 SuperSpeed (5 Gbps), DisplayPort Alt-Mode (`card1-DP-1`) & 7.0 GiB usable RAM** |
 | 11-12 | - | SM8450 IPA v5.1 (`qcom,sm8450-ipa`, `ipa_gsi_mem` PAS 15) + `rpmsg_wwan_ctrl` + `s22-modem.service` (Dual-SIM UIM + `81voltd` + `VoiceCall`/`Earpiece` UCM2); S6E3FAC dynamic VRR/LFD (10-120 Hz + seamless 120/96/60/48/30/24 Hz), HBM (~1300 nits + auto-lux), mDNIe/OTP colour calibration & HLPM Always-On Display | **Full cellular modem stack (ModemManager + mobile data/SMS/calls ready) & S6E3FAC Display Extras** |
 | 11-14 | - | Expand `s2mpb02-regulator` (21 rails + always-on shared I/O supplies), add SM8450 CAMSS 3-phase C-PHY support (`local-sm8450-camss-cphy.patch`), wire `&gpi_dma2` + `&i2c16` + `gpio83`, add V4L2 drivers (`imx374`, `s5k3k1`, `imx563`, `s5kgn3`) and CamX register extractor | **All 4 cameras streaming RAW10 (D-PHY + C-PHY)** |
+| 11-18 | - | Fix camera thermal overdrive (`VBLANK_MIN`, 15 fps full-res, `2040x1532` 2x2 binned zero-copy DMABUF `3.28 ms/frame`, async single-frame JPEG q92), mask `MAX77705_AICL_I` 345 Hz IRQ storm, add `charge_control_end_threshold` (`s22-charge-limit`), port full `cs40l26-full` Halo DSP haptics (143 RAM waves + SVC + custom PWLE), enable `CS35L41` Halo DSP speaker protection (~+5 dB), `PN547` NFC, `S2MPB02`+`gpio87`+`PM8350C` LED flash + Plasma Mobile Flashlight QuickSetting, `s22-kbd-autohide`, Android+PC MTP (`06:01:01`), FastRPC userspace, `qbt2000-r0q` bridge & safe `reboot2` | **Cool camera, louder protected speakers, full DSP haptics, NFC, flash/flashlight, charge limit & keyboard auto-hide** |
 
 ## Added to the repo
 
@@ -67,7 +68,6 @@ Wi-Fi is the one big item still open. Even the failed Wi-Fi attempts are useful:
 
 - Battery reported 1,348 mAh (2.5x low) and bootlooped via `upowerd` PowerOff on low-SOC cold boots: fixed 2 mOhm `rsns-microohm = <2000>`, `AvgCurrent`/`NOT_CHARGING` guard while supplied, Type-C 3.0 A `CHGIN_ILIM` propagation (+4.56 W charging), and `MAX17042_VALRT_Th` / `qcom_q6v5` handover IRQ wakeup storms
 
-## Still open
+## Hardware / TrustZone boundaries
 
-Wi-Fi (details in README), audio, cellular modem, sleep/suspend, sensors, NFC, cable detection. See
-[CHECKLIST-not-sorted.md](CHECKLIST-not-sorted.md).
+Ultrasonic fingerprint pixel SPI (`QBT2608`) is hardware-isolated in Qualcomm QSEE TrustZone (`qbt2000-r0q` Linux bridge is up). See [CHECKLIST.md](../CHECKLIST.md) and [CHECKLIST-not-sorted.md](../CHECKLIST-not-sorted.md).

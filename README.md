@@ -24,22 +24,25 @@ Australian XSA, One UI 7, bootloader unlocked) from the phone's own storage. And
 
 > Source, configs, notes and logs only. No firmware, images, backups or Samsung blobs are in this repo.
 
-## Status (2026-10-20, attempt 28)
+## Status (2026-11-18)
 
-| Works | Partly | Not yet |
-|---|---|---|
-| Boot via uniLoader, UFS, USB networking + SSH | **Cellular modem + SM8450 IPA v5.1**: auto-boots, QMI + `rmnet_ipa0` + `wwan0at0` in ModemManager, Dual-SIM UIM, `81voltd` & `VoiceCall` UCM2 (awaiting physical SIM test) | Fingerprint (QBT2000 TZ), NFC |
-| **Wi-Fi** 2.4 + 5 GHz, Wi-Fi 6 2x2, 960 Mbit/s, autoconnects at boot | On-screen keyboard (no auto-hide) | **NPU userspace (CDSP firmware runs, attempt 29)**, speaker protection |
-| **Audio: stereo speakers + Earpiece (2x CS35L41) + 2 mics**, HiFi & VoiceCall UCM2 | **Vulkan (Turnip) on Adreno 730** | |
-| **USB-C USB 3.0 SuperSpeed (5 Gbps), OTG (FAT/exFAT/ISO), PD & DisplayPort Alt-Mode (`card1-DP-1`)** + **MTP** | | |
-| **Sensors** (SLPI: accel/auto-rotate, ALS/auto-brightness, proximity, compass) | | |
-| **Writable hardware RTC** (PMK8350 SDAM offset) + **Deep suspend/resume** | | |
-| **Display 120/96/60/48/30/24 Hz + Dynamic VRR (10-120 Hz LFD), HBM (~1300 nits), mDNIe/OTP colour calibration & Always-On Display (HLPM)** | | |
-| Touch (STM FTS2BA61Y, multitouch), GPU (Adreno 730) | | |
-| Bluetooth (address from EFS), battery %, charging | | |
-| **7.0 GiB RAM** (7,161 MiB usable), firewall (nftables) | | |
-| Plasma Mobile autologin (tinydm), **power/volume up/volume down keys** | | |
-| **All 4 cameras (CAMSS D-PHY + 3-phase C-PHY RAW10)**: IMX374 front, S5K3K1 3x tele, IMX563 ultrawide, S5KGN3 main wide | | |
+| Works | Partly / TZ Boundary |
+|---|---|
+| Boot via uniLoader, UFS, USB networking + SSH | **Cellular modem + SM8450 IPA v5.1**: auto-boots, QMI + `rmnet_ipa0` + `wwan0at0` in ModemManager, Dual-SIM UIM, `81voltd` & `VoiceCall` UCM2 (physical SIM test ready) |
+| **Wi-Fi** 2.4 + 5 GHz, Wi-Fi 6 2x2, 960 Mbit/s, autoconnects at boot (ASPM `powersave`) | **Fingerprint (`QBT2608 / qcom,qbt2000`)**: Linux `qbt2000-r0q` GPIO/IRQ/regulator bridge up (`WUHB` ultrasonic wake IRQ); pixel SPI & matching locked in QSEE TrustZone |
+| **Audio: stereo speakers + Earpiece (2x CS35L41 Halo DSP speaker protection, ~+5 dB) + 2 mics**, HiFi & VoiceCall UCM2 | |
+| **USB-C USB 3.0 SuperSpeed (5 Gbps), OTG (FAT/exFAT/ISO/UDF), PD & DisplayPort Alt-Mode (`card1-DP-1`)** + **MTP (PC + Android OTG `06:01:01`)** | |
+| **Full CS40L26 Halo Core DSP haptics** (authentic Samsung `cs40l26.wmfw`, 143 RAM waves, SVC, A2H, custom PWLE) | |
+| **NFC (`NXP PN547/SN110` `nfc0` + `neard`)**, **Camera LED Flash & Plasma Mobile Flashlight QuickSetting** (`S2MPB02` + `gpio87` + `PM8350C`) | |
+| **On-screen keyboard + auto-hide** (`s22-kbd-autohide.service`), **CDSP 32 MiB + FastRPC userspace**, **Battery charge limit** (`s22-charge-limit`) | |
+| **Sensors** (SLPI: accel/auto-rotate, ALS/auto-brightness, proximity, compass) | |
+| **Writable hardware RTC** (PMK8350 SDAM offset) + **Deep suspend/resume** | |
+| **Display 120/96/60/48/30/24 Hz + Dynamic VRR (10-120 Hz LFD), HBM (~1300 nits), mDNIe/OTP colour calibration & Always-On Display (HLPM)** | |
+| Touch (STM FTS2BA61Y, multitouch), **GPU (Adreno 730 `msm-w10` + Turnip Wave 5 Vulkan)** | |
+| Bluetooth (address from EFS), battery %, charging | |
+| **7.0 GiB RAM** (7,161 MiB usable), firewall (nftables) | |
+| Plasma Mobile autologin (tinydm), **power/volume up/volume down keys** | |
+| **All 4 cameras (CAMSS D-PHY + 3-phase C-PHY RAW10)**: IMX374 front, S5K3K1 3x tele, IMX563 ultrawide, S5KGN3 main wide | |
 
 **Complete start-to-finish guide (unlock, root, EFS backup, TWRP, everything we found): [docs/S22-Mainline-Linux-Guide.pdf](docs/S22-Mainline-Linux-Guide.pdf).**
 

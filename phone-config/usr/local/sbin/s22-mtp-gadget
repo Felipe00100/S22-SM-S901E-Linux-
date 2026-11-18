@@ -1,16 +1,38 @@
 #!/bin/sh
-# Add an MTP function (umtprd over FunctionFS) next to pmOS NCM, so phones/PCs see files.
+# SPDX-License-Identifier: MIT
+# Add MTP (umtprd over FunctionFS, standard class 06:01:01) next to USB NCM
+# so both Android OTG phones and PCs can browse files without breaking SSH.
+set -e
+
 G=/sys/kernel/config/usb_gadget/g1
-C=$(ls -d $G/configs/*.* | head -1)
-[ -d $G/functions/ffs.mtp ] || mkdir $G/functions/ffs.mtp
+[ -d "$G" ] || exit 0
+C=$(ls -d "$G"/configs/*.* 2>/dev/null | head -n 1)
+[ -n "$C" ] || exit 0
+
+[ -d "$G/functions/ffs.mtp" ] || mkdir -p "$G/functions/ffs.mtp"
 mkdir -p /dev/mtp
 mountpoint -q /dev/mtp || mount -t functionfs mtp /dev/mtp
-rc-service umtprd start
-for i in 1 2 3 4 5 6 7 8 9 10; do [ -e /dev/mtp/ep1 ] && break; sleep 1; done
-[ -e /dev/mtp/ep1 ] || { echo "umtprd did not set up endpoints"; exit 1; }
-[ -e $C/ffs.mtp ] && exit 0
-UDC=$(cat $G/UDC)
-echo "" > $G/UDC
-ln -s $G/functions/ffs.mtp $C/
-echo $UDC > $G/UDC
-echo "MTP added on $UDC"
+
+if ! pidof umtprd >/dev/null 2>&1; then
+    /usr/sbin/umtprd >/dev/null 2>&1 &
+fi
+
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+    [ -e /dev/mtp/ep1 ] && break
+    sleep 0.5
+done
+[ -e /dev/mtp/ep1 ] || { echo "umtprd did not create /dev/mtp/ep1" >&2; exit 1; }
+
+if [ ! -e "$C/ffs.mtp" ]; then
+    UDC=$(cat "$G/UDC" 2>/dev/null || true)
+    [ -n "$UDC" ] && echo "" > "$G/UDC"
+    ln -sf "$G/functions/ffs.mtp" "$C/ffs.mtp"
+    if [ -n "$UDC" ]; then
+        echo "$UDC" > "$G/UDC"
+        sleep 0.5
+        ip link set usb0 up 2>/dev/null || true
+        ip addr replace 172.16.42.1/16 dev usb0 2>/dev/null || true
+        systemctl restart unudhcpd@usb0.service 2>/dev/null || true
+    fi
+fi
+echo "MTP ready (06:01:01 Android + PC compatible)"

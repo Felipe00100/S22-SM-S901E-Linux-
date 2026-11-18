@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+i=0; while [ $i -lt 50 ]; do [ -d /proc/asound/card0 ] && break; sleep 0.2; i=$((i+1)); done
 
 CARD="${1:-0}"
 

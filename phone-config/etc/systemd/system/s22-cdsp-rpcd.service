@@ -1,0 +1,13 @@
+[Unit]
+Description=Samsung Galaxy S22 CDSP FastRPC Listener (hexagonrpcd)
+After=systemd-udevd.service
+
+[Service]
+Type=simple
+ExecStartPre=-/sbin/modprobe system_heap
+ExecStart=/usr/bin/hexagonrpcd -f /dev/fastrpc-cdsp -d cdsp -R /usr/lib/dsp/
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
