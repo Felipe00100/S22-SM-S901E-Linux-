@@ -41,12 +41,5 @@ QS.QuickSetting {
         onTriggered: root.refreshState()
     }
 
-    Timer {
-        interval: 2500
-        running: true
-        repeat: true
-        onTriggered: root.refreshState()
-    }
-
     Component.onCompleted: refreshState()
 }
