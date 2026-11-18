@@ -31,7 +31,7 @@ Updated 2026-11-18 · kernel 7.2.11
 - [x] **NFC**: NXP `PN547/SN110` on `i2c17 @ 0x28` (`nxp-nci_i2c`, `nfc0`, `neard` + `nfctool` polling `Felica/MIFARE/Jewel/ISO-DEP/NFC-DEP/ISO-15693`; powered off `0 mW` in idle)
 - [x] Brightness slider (DBV 6-2047) + auto-brightness via `STK33915`
 - [x] **Memory bandwidth voting & runtime PM gating**: CPU + DDR bwmon + GPU votes idle at lowest step; all 16 unused GDSCs (`mdss`, `gpu`, `titan_top`, `video`, `pcie_1`, `mss`, `mxc`, `mx`, `lmx`, `lcx`, `gfx`, `ebi`) are `off-0` and all 11 unused `cam_cc`/`video_cc` PLLs are gated off (`N`) in idle
-- [x] **Idle battery**: ~3.2 %/h + `MAX77705_AICL_I` 345 Hz IRQ storm eliminated + PCIe ASPM `powersave` (`s22-power-save.service`)
+- [x] **Idle battery**: `MAX77705_AICL_I` 345 Hz IRQ storm masked + PCIe ASPM `powersave` (`s22-power-save.service`); **ADSP Q6PRM `LPASS_HW_{MACRO,DCODEC}` runtime PM fix** (ADSP sleep `0.017%` -> `100%` idle in `qcom_stats/adsp`); **screen-off `fts2ba61y` `sense_enable` IRQ/scan gating + `s22-display-extrasd` netlink uevent sync**; removed 2.5 s `plasmashell` flashlight polling timer (`ufs-qcom` lane clk/ICC, `dwc3-qcom` `USB_ROLE_NONE` DDR ICC & `llcc_bwmon`/`cpu_bwmon` 200 MHz OPPs landed in patches/DTS, active after `uniLoader` `boot.img` rebuild)
 - [x] **Sensors**: SLPI sensor hub (`remoteproc_slpi` + `L2C`/`L9C` + `s22-hex-cb3` + `hexagonrpcd` + `iio-sensor-proxy`): auto-rotate (`LSM6DSO`), ALS & proximity (`STK33915`), compass (`AK09918`)
 - [x] **Writable hardware RTC**: `pmk8350_rtc` wired to `pmk8350_sdam_21` (`rtc-offset@78`)
 - [x] **Suspend/resume**: `deep` sleep + RTC/power-button wake verified; Wi-Fi, touch, sensors and USB NCM survive resume without replug
