@@ -1,57 +1,46 @@
-# S22 (SM-S901E) Linux - what's sorted and what's not (2026-10-18, updated 10:50)
+# S22 (SM-S901E) Linux - what's sorted and what's not (updated 2026-11-18)
 
 ## Working
 - [x] Boots postmarketOS from internal storage (uniLoader + mainline 7.2.11)
-- [x] USB networking + SSH (PC internet sharing)
-- [x] Display: real S6E3FAC panel driver, frames straight to panel
-- [x] Touch (multitouch, orientation correct)
-- [x] GPU (Adreno 730 freedreno, GPU compositing)
-- [x] Bluetooth (address from EFS, scans devices)
-- [x] zram swap, thermal sensors, NTP clock
-- [x] Plasma Mobile only (tinydm autologin); power, volume down and (since attempt 27) VOLUME UP work; clock saved/restored across boots
+- [x] USB networking + SSH (USB 3.0 SuperSpeed + USB 2.0 fallback, auto-connects at boot)
+- [x] Display: real S6E3FAC panel driver, frames straight to panel at 120 Hz + dynamic VRR/HBM/mDNIe/AOD
+- [x] Touch (FTS2BA61Y multitouch, portrait orientation correct)
+- [x] GPU (Adreno 730 freedreno/Turnip Wave 5 + `msm-w10`, KWin GPU compositing on `card0`)
+- [x] Bluetooth (address from EFS, A2DP audio in & car-stereo audio out)
+- [x] zram swap, thermal sensors, writable hardware RTC (`pmk8350_sdam_21`) + NTP clock
+- [x] Plasma Mobile (tinydm autologin, 2.5x scale); power, volume down and volume up buttons work
 
-## Not sorted - needs work
-- [x] **Wi-Fi CONNECTS** (5 GHz, Wi-Fi 6 2x2, 960 Mbit/s link), autoconnects at boot (ath11k loaded late by /etc/local.d/s22-wifi.start). 2.4 GHz connect still to fix
+## Sorted bring-up items
+- [x] **Wi-Fi CONNECTS** (2.4 GHz + 5 GHz, Wi-Fi 6 2x2, 960 Mbit/s link), autoconnects at boot (`s22-wlan-pdc` enables 2.2 V `s3e` PA rail; PCIe ASPM `powersave` active)
 - [x] **Wi-Fi signal** fixed by Samsung board file (-35 dBm 2.4 GHz, -51 dBm 5 GHz at 6 m)
-- [x] **RAM**: +512 MiB (dropped mainline mte_mem), 6.6 GiB usable (attempt 21)
-- [x] **On-screen keyboard** (plasma-keyboard as KWin input method; hide key works, no auto-hide yet)
-- [x] **Charging**: works (charger driver unblocked, battery seen going 99% -> 100%); battery status icon may say Unknown until DT links gauge to charger
-- [x] **Battery %**: works (max170xx_battery, DT dependency on charger removed)
-- [x] **USB auto-connect at boot** (MAX77705 Type-C role switch, attempt 23; SSH ~25 s after boot, no replug)
-- [x] **Firewall** (nftables, kernel #19)
-- [x] **Apps**: QMLKonsole terminal, Google Chrome (Flathub, official ARM64), Chromium, Discover + Flathub app store, KRecorder (GStreamer backend)
-- [x] **Volume up** button (gpio-keys, attempt 27)
-- [x] **Audio**: stereo loudspeakers (top = left, bottom = right) + 2 microphones, PulseAudio Speaker sink + Mic source (attempts 24-26). Still: speaker protection fw, call audio
-- [~] **Cellular modem**: boots (attempt 20), QMI online, 52 services; rmtfs from EFS copies read-only. Started by hand (not at boot).
-      No SIM inserted yet; ModemManager does not list it yet. SMS/calls untested; mobile data needs sm8450 IPA (not in mainline)
-- [ ] **Sleep / suspend / resume**, screen off + wake, power button behaviour (untested)
-- [ ] **Brightness control in the UI** (backlight exists; slider untested), auto-brightness
-- [ ] **Sensors**: auto-rotate (accelerometer/gyro), proximity, ambient light
-- [ ] **Vibration / haptics** (max77705 haptic not bound)
-- [ ] **Cameras**, flash
-- [ ] **Fingerprint** reader
-- [ ] **NFC**
-- [ ] **USB-C**: host/OTG (driver + OTG VBUS in place since attempt 23, untested), PD, DisplayPort out, USB3 (currently USB2 peripheral only)
-- [ ] **RTC** is read-only (clock relies on NTP; no time at boot until network)
-- [x] **120 Hz** (panel driver refresh=120 default, stock fhd120hs timing + commands)
-- [ ] **Display extras**: VRR (no dynamic switching), HBM, colour calibration, always-on display
+- [x] **RAM**: +854 MiB total reclaimed, **7.0 GiB (7,161 MiB) usable** (full 32 MiB `cdsp_mem`, modem/camera/CVP kept)
+- [x] **On-screen keyboard + auto-hide**: `plasma-keyboard` as KWin input method + `s22-kbd-autohide.service` (tapping above keyboard hides it and re-arms for next text field)
+- [x] **Charging + battery % + charge limit**: `max77705-charger` + `max170xx_battery` linked via `power-supplies = <&max77705_charger>`, accurate 2 mOhm scaling (`3,700 mAh`), USB-C Rp 3.0 A `CHGIN_ILIM`, `MAX77705_AICL_I` 345 Hz IRQ storm masked (`0 IRQs/s`), and `charge_control_end_threshold` (`50-100%`) + `s22-charge-limit`
+- [x] **USB auto-connect at boot** (MAX77705 Type-C role switch; SSH ~25 s after boot, no replug)
+- [x] **Firewall** (nftables)
+- [x] **Apps**: QMLKonsole, Google Chrome (Flathub ARM64), Discover + Flathub, KRecorder (GStreamer backend), Dolphin, Plasma Camera
+- [x] **Volume up** button (gpio-keys on PM8350 GPIO 6)
+- [x] **Audio + Speaker Protection**: stereo loudspeakers (top = left, bottom = right) + handset Earpiece + 2 microphones + VoiceCall UCM2 + **Cirrus CS35L41 Halo DSP speaker protection** (`cirrus,subsystem-id = "r0q"`, `s22-speaker-prot` impedance/ambient calibration, ~+5 dB louder safe output)
+- [x] **Cellular modem + SM8450 IPA v5.1 (`qcom,sm8450-ipa`)**: auto-starts at boot (`s22-modem.service`, read-only `rmtfs`), IPA v5.1 + `rmnet` + `rpmsg_wwan_ctrl` in **ModemManager (`qcom-soc`)** for 4G/5G data, SMS, Voice Calls (`81voltd` + `VoiceCall` UCM2), Dual-SIM UIM & GNSS
+- [x] **Sleep / suspend / resume**: `deep` sleep + RTC/power-button wake verified; Wi-Fi, touch, sensors and USB NCM survive resume without replug
+- [x] **Brightness control in the UI** (DBV 6-2047) + **auto-brightness** via `STK33915` (`iio-sensor-proxy`)
+- [x] **Sensors**: SLPI sensor hub (`remoteproc_slpi` + `L2C`/`L9C` rails + `s22-hex-cb3` + `hexagonrpcd`) -> auto-rotate (`LSM6DSO`), proximity & ambient light (`STK33915`), compass (`AK09918`)
+- [x] **Vibration / haptics (full CS40L26 Halo Core DSP)**: `cs40l26-full` on `i2c9 @ 0x40` with authentic Samsung `cs40l26.wmfw` (v39.2.22), 143 RAM waveforms (`cs40l26-wt3.bin`), F0/Redc calibration + `cs40l26-svc3.bin` + `cs40l26-a2h.bin`, 100% `FF_GAIN`, `FF_RUMBLE`/`FF_SINE` & custom PWLE waveforms (`s22-vibrate` + `feedbackd`)
+- [x] **Cameras (all 4 sensors + thermal/power fix)**: front **Sony IMX374**, tele **Samsung S5K3K1**, ultrawide **Sony IMX563**, and 50MP wide **Samsung S5KGN3**; fixed `VBLANK_MIN` overdrive, capped full-res modes to 15 fps, enabled `2040x1532` 2x2 binned zero-copy DMABUF (`3.28 ms/frame`, GPU idles at `220 MHz`), single-frame async JPEG q92 capture
+- [x] **Camera LED flash & flashlight**: `S2MPB02` FLED (`s2mpb02:white:flash` + `gpio87`) + `PM8350C` (`white:flash-0..3`), `s22-flash` CLI, **Plasma Mobile QuickSettings Flashlight** toggle (KAuth-free direct `s22-flash`), and `plasma-camera` strobe
+- [x] **Fingerprint hardware bridge (`Qualcomm 3D Sonic Gen 2 QBT2608 / qcom,qbt2000`)**: Linux `qbt2000-r0q` driver exposes `/dev/qbt2000_ipc`, `qbt2000_key_input`, `VDD_BTP_1P8` (`0 mW` off in idle), `WUHB` ultrasonic finger-detect wake IRQ (`gpio89`), and `/sys/class/fingerprint/fingerprint/*` (ultrasonic pixel SPI & matching stay hardware-locked in QSEE `qbt1000` TA)
+- [x] **NFC**: NXP `PN547/SN110` on `i2c17 @ 0x28` (`nxp-nci_i2c`, `nfc0`, `neard` + `nfctool` polling `Felica/MIFARE/Jewel/ISO-DEP/NFC-DEP/ISO-15693`; `0 mW` off in idle)
+- [x] **USB-C**: host/OTG (VBUS, FAT/exFAT/ISO/UDF), USB-PD (5V/3A & 9V/2A), **USB 3.0 SuperSpeed (5 Gbps, CC1/CC2)**, and **DisplayPort Alt-Mode (`card1-DP-1`, SVDM `0xff01` Pin C/D/E)**
+- [x] **Writable hardware RTC**: `pmk8350_rtc` wired to `pmk8350_sdam_21` (`rtc-offset@78`)
+- [x] **120 Hz + Display extras (`panel-samsung-s6e3fac` + `s22-display-ctl`)**: VRR (10-120 Hz PHS/LFD + seamless 120/96/60/48/30/24 Hz), HBM (~1300 nits + sunlight auto-boost), mDNIe/IRC/OTP colour calibration, and HLPM Always-On Display
 
-## Known rough edges / tech debt
-- [ ] `panel = <&panel_size>` on simple-framebuffer blocks it from probing (no fallback display if the DSI path fails); fix needs care with card numbering (WLR_DRM_DEVICES=/dev/dri/card1 is hardcoded)
-- [ ] Never unbind msm-mdss live (oopsed once); update display drivers by module install + reboot
-- [ ] CDSP memory shrunk (2 MiB + 15 parts) - restore a full 32 MiB before any DSP work
-- [ ] dispcc built as module; display relies on it loading at boot (blocklist line commented out)
-- [ ] Plasma Mobile: UI scale (2.5x), nav bar (Back/Home/Overview), KWin GPU rendering not yet set up
-- [ ] Phosh: on-screen keyboard popping up by itself; home bar should now appear on DSI-1 (unverified)
-- [ ] Debug leftovers: mhi/host/Makefile still has -DDEBUG (tree), test modules in ~ on the phone (mhi-poll, ath11k_pci-*, rfclk), panel driver readback prints, ramoops/console debug patch in the kernel
-- [ ] Upstream-pending patches carried locally: FTS2BA61Y touch driver, MAX77705 rev 0x2, r0q device tree, new panel driver
-- [ ] Kernel cmdline is forced; module blocklist /etc/modprobe.d/s22-bringup.conf still lists several modules (qcrypto must stay blocked: it hangs the phone)
-- [ ] Reboot helper: `~/reboot2` with no argument reboots into the last target (went to TWRP once) - always pass an explicit argument
-- [-] (skipped by user) Upstream patch ready to send: kernel-config/upstream-patches/0001-PCI-qcom-Parse-iommu-map-entries-using-iommu-cells.patch (Fixes filled; needs your name + Signed-off-by)
-- [ ] Plasma Display settings label the native portrait mode "Landscape" (cosmetic; panel orientation property)
-- [ ] NOTE for new ports / reinstalls: install USB-C auto-detection (MAX77705 Type-C driver + DT role switch, kernel-config/upstream-patches/tabs8/) ASAP, right after USB networking works - it removes the replug on every test boot
-- [x] USB link drops = system suspend (dwc3 HS-PHY not in L2 on resume); suspend blocked for now (elogind sleep.conf.d + powerdevilrc)
-- [x] **USB plug/unplug detection** (attempt 28): MAX77705 IRQ pin gpio5 power-source 0 -> 1 (stock if_pmic_irq). Was: 200001-IRQ storm then dead, no hotplug
-- [x] **MTP file transfer to PC** (umtprd + FunctionFS next to NCM, /usr/local/sbin/s22-mtp-gadget, /etc/local.d/s22-mtp.start). Android hosts can't browse MTP devices
-- [x] Chromium removed; Google Chrome launcher in ~/.local/share/applications; Plasma env sources flatpak.sh
-- [x] PC "S22 USB (pmOS)" NM profile no longer ipv4 shared
+## Resolved tech debt & permanent hardware notes
+- [x] **CDSP full 32 MiB + FastRPC userspace**: `cdsp_mem` restored to full 32 MiB (`0x2000000`) with `uniLoader` DTB relocation (`0xb6000000`), `fastrpc` (`libcdsprpc.so` + persistent `s22-cdsp-rpcd.service` via `hexagonrpcd` + `system_heap`), and read-only extracted `/usr/lib/dsp/{cdsp,adsp}` libraries
+- [x] **Plasma Mobile**: UI scale (2.5x), nav bar, KWin GPU rendering on unified `msm` DRM `card0` (`startplasmamobile` + `s22-adreno.conf` drop-in hardened against `apk upgrade`, plus `deviceinfo_flash_kernel_on_update="false"` protecting `uniLoader`), plus **Flashlight**, **Always-On Display** & **Game 90Hz** QuickSettings
+- [x] **Debug leftovers cleaned**: stale test `.ko.zst`/`.so`/`.log` and `.bak-phase*` module trees removed on phone; Phosh sessions hidden (Plasma Mobile is the sole session)
+- [x] **Safe `reboot2` helper**: `reboot2` with no argument now prints `Usage: reboot2 <normal|recovery|bootloader|download>` and exits `2` instead of rebooting into TWRP (`reboot2 normal` reboots cleanly into Linux)
+- [x] **Portrait panel orientation** (`DRM_MODE_PANEL_ORIENTATION_NORMAL`) wired in `panel-samsung-s6e3fac`
+- [x] **USB plug/unplug detection & Type-C auto-connect**: MAX77705 IRQ pin `gpio5` `power-source = <1>` + `max77705-usbc` wired into `apply-kernel-patches.sh`
+- [x] **MTP file transfer (PC + Android OTG hosts)**: `umtprd` configured with standard USB Still Image / MTP class (`06:01:01`, `interface "MTP"`, `s22-mtp.service`) next to NCM
+- [x] **Runtime clock/PD gating verified**: all 16 unused GDSCs are `off-0` and all 11 unused `cam_cc`/`video_cc` PLLs are `N` (`0 mW`) at runtime; `dispcc=m` + `clk_ignore_unused pd_ignore_unused` are kept intentionally for `simple-framebuffer` -> `msm-mdss` boot handoff and RPMh `rf_clk1..4`; `qcrypto` stays blocked in `/etc/modprobe.d/s22-bringup.conf` (TZ xPU); update `msm-mdss` via module install + reboot rather than live unbind
+- [-] (skipped by user) Upstream patch ready to send: `kernel/upstream-patches/0001-PCI-qcom-Parse-iommu-map-entries-using-iommu-cells.patch`
