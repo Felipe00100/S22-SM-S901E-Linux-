@@ -1,25 +1,62 @@
 From: Antigravity <antigravity@s22-linux.local>
-Subject: [PATCH] power: supply: max77705_charger: keep AICL_I masked to stop 345 Hz IRQ/uevent storm
+Subject: [PATCH] power: supply: max77705_charger: mask AICL_I and filter redundant chgin-irq notifications
 
 MAX77705 regulates input voltage autonomously in hardware via VCHGIN_REG.
 When connected to a standard 500 mA USB host port on Samsung Galaxy S22
 (SM-S901E, r0q), AICL_OK chatters at ~345 Hz at the regulation boundary,
-driving 345 threaded I2C IRQs/s on 994000.i2c and 345 power_supply_changed()
-uevents/s into upowerd and plasmashell.
+and chgin-irq can fire repeatedly without state changes, driving threaded
+I2C IRQs on 994000.i2c and continuous power_supply_changed() uevent storms
+into upowerd and plasmashell.
 
-Do not request/unmask MAX77705_AICL_I so regmap-irq leaves it masked in
-CHG_INT_MASK, reducing idle 994000.i2c interrupts from 345/s to 0/s.
+Keep MAX77705_AICL_I masked in hardware and suppress duplicate
+power_supply_changed() notifications in max77705_chgin_isr_work() when
+DETAILS_00/DETAILS_01 are unchanged within a 2-second debounce window.
 
 Signed-off-by: Antigravity <antigravity@s22-linux.local>
 ---
- drivers/power/supply/max77705_charger.c | 11 +++++------
- 1 file changed, 5 insertions(+), 6 deletions(-)
-
 diff --git a/drivers/power/supply/max77705_charger.c b/drivers/power/supply/max77705_charger.c
-index 89e954262..c4f81a2b0 100644
 --- a/drivers/power/supply/max77705_charger.c
 +++ b/drivers/power/supply/max77705_charger.c
-@@ -765,12 +765,11 @@ static int max77705_charger_probe(struct platform_device *pdev)
+@@ -10,6 +10,8 @@
+ #include <linux/devm-helpers.h>
+ #include <linux/i2c.h>
+ #include <linux/interrupt.h>
++#include <linux/jiffies.h>
++#include <linux/limits.h>
+ #include <linux/mfd/max77693-common.h>
+ #include <linux/mfd/max77705-private.h>
+ #include <linux/power/max77705_charger.h>
+@@ -551,7 +553,19 @@
+ {
+ 	struct max77705_charger_data *chg =
+ 		container_of(work, struct max77705_charger_data, chgin_work);
+-
++	unsigned int d00 = UINT_MAX, d01 = UINT_MAX;
++	int r0, r1;
++
++	r0 = regmap_read(chg->regmap, MAX77705_CHG_REG_DETAILS_00, &d00);
++	r1 = regmap_read(chg->regmap, MAX77705_CHG_REG_DETAILS_01, &d01);
++	if (!r0 && !r1 &&
++	    (d00 == chg->last_details_00 && d01 == chg->last_details_01) &&
++	    !time_after(jiffies, chg->last_notify_jiffies + msecs_to_jiffies(2000)))
++		return;
++
++	chg->last_details_00 = d00;
++	chg->last_details_01 = d01;
++	chg->last_notify_jiffies = jiffies;
+ 	power_supply_changed(chg->psy_chg);
+ }
+ 
+@@ -712,6 +726,8 @@
+ 		return -ENOMEM;
+ 
+ 	chg->dev = dev;
++	chg->last_details_00 = UINT_MAX;
++	chg->last_details_01 = UINT_MAX;
+ 	i2c_set_clientdata(i2c, chg);
+ 
+ 	chip_desc = devm_kmemdup(dev, &max77705_charger_irq_chip,
+@@ -765,12 +781,11 @@
  	if (ret)
  		return ret;
  
@@ -37,3 +74,16 @@ index 89e954262..c4f81a2b0 100644
  
  	ret = max77705_charger_enable(chg);
  	if (ret)
+diff --git a/include/linux/power/max77705_charger.h b/include/linux/power/max77705_charger.h
+--- a/include/linux/power/max77705_charger.h
++++ b/include/linux/power/max77705_charger.h
+@@ -189,6 +189,9 @@
+ 	struct workqueue_struct *wqueue;
+ 	struct work_struct	chgin_work;
+ 	struct power_supply	*psy_chg;
++	unsigned int		last_details_00;
++	unsigned int		last_details_01;
++	unsigned long		last_notify_jiffies;
+ };
+ 
+ #endif /* __MAX77705_CHARGER_H */
