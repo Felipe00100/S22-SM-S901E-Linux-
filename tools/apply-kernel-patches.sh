@@ -34,6 +34,7 @@ for p in \
 	"$U/local-sc8280xp-cs35l41-pll-reference.patch" \
 	"$T/max17042-max77705-i2c-id.patch" \
 	"$U/local-max17042-r0q-rsns-status-valrt.patch" \
+	"$U/local-max17042-charge-control-limit.patch" \
 	"$T/max77705-charger-otg-regulator.patch" \
 	"$T/max77705-charger-battery-info.patch" \
 	"$T/max77705-charger-otg-shutdown.patch" \

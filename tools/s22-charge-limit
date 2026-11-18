@@ -1,0 +1,31 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Samsung Galaxy S22 (SM-S901E) Battery Charge Limit Controller (50..100%)
+set -e
+
+NODE="/sys/class/power_supply/max170xx_battery/charge_control_end_threshold"
+CONF="/etc/s22-charge-limit.conf"
+
+cmd="${1:-status}"
+case "$cmd" in
+    status)
+        cur=$(cat "$NODE" 2>/dev/null || echo "N/A")
+        soc=$(cat /sys/class/power_supply/max170xx_battery/capacity 2>/dev/null || echo "N/A")
+        st=$(cat /sys/class/power_supply/max170xx_battery/status 2>/dev/null || echo "N/A")
+        echo "Battery: ${soc}% (${st}) | Charge limit: ${cur}%"
+        ;;
+    off|100|full)
+        echo 100 > "$NODE"
+        echo 100 > "$CONF" 2>/dev/null || true
+        echo "Charge limit set to 100% (unlimited)"
+        ;;
+    [5-9][0-9])
+        echo "$cmd" > "$NODE"
+        echo "$cmd" > "$CONF" 2>/dev/null || true
+        echo "Charge limit set to ${cmd}% (Buck power-path stays active; charging pauses at ${cmd}%)"
+        ;;
+    *)
+        echo "Usage: s22-charge-limit <50..100|off|status>" >&2
+        exit 1
+        ;;
+esac

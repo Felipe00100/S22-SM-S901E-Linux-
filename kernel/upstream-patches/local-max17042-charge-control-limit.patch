@@ -1,0 +1,128 @@
+From: Antigravity <antigravity@s22-linux.local>
+Subject: [PATCH] power: supply: max17042_battery: add charge_control_end_threshold via MAX77705
+
+Expose standard POWER_SUPPLY_PROP_CHARGE_CONTROL_END_THRESHOLD (50..100%) on
+max170xx_battery so UPower, KDE Plasma Mobile Battery Settings, and CLI tools
+can cap battery charging while keeping MAX77705 USB Buck power-path active
+(CNFG_00 mode 0x04 above threshold, resuming 0x05 with 2% hysteresis).
+
+Store struct i2c_adapter *adapter on struct max17042_chip during probe so both
+direct I2C clients and MFD platform_device children (max77705-battery.0.auto)
+resolve the sibling MAX77705 charger I2C address (<bus>-0069) safely.
+
+Signed-off-by: Antigravity <antigravity@s22-linux.local>
+---
+--- a/drivers/power/supply/max17042_battery.c
++++ b/drivers/power/supply/max17042_battery.c
+@@ -64,6 +64,7 @@
+ 
+ struct max17042_chip {
+ 	struct device *dev;
++	struct i2c_adapter *adapter;
+ 	struct regmap *regmap;
+ 	struct power_supply *battery;
+ 	enum max170xx_chip_type chip_type;
+@@ -79,6 +80,7 @@
+ 	int    vmax;	/* in millivolts */
+ 	int    temp_min;	/* in tenths of degree Celsius */
+ 	int    temp_max;	/* in tenths of degree Celsius */
++	int    charge_control_end_threshold;
+ };
+ 
+ static enum power_supply_property max17042_battery_props[] = {
+@@ -105,6 +107,7 @@
+ 	POWER_SUPPLY_PROP_TEMP_MAX,
+ 	POWER_SUPPLY_PROP_HEALTH,
+ 	POWER_SUPPLY_PROP_SCOPE,
++	POWER_SUPPLY_PROP_CHARGE_CONTROL_END_THRESHOLD,
+ 	POWER_SUPPLY_PROP_TIME_TO_EMPTY_NOW,
+ 	POWER_SUPPLY_PROP_TIME_TO_FULL_NOW,
+ 	// these two have to be at the end on the list
+@@ -128,6 +131,44 @@
+ 	return 0;
+ }
+ 
++static void max17042_sync_charge_limit(struct max17042_chip *chip)
++{
++	struct device *chg_dev;
++	struct regmap *chg_map;
++	unsigned int soc_raw, soc, cnfg00;
++	char chg_name[32];
++
++	if (!chip->adapter)
++		return;
++
++	if (regmap_read(chip->regmap, MAX17042_RepSOC, &soc_raw) < 0)
++		return;
++	soc = soc_raw >> 8;
++
++	snprintf(chg_name, sizeof(chg_name), "%d-0069",
++		 i2c_adapter_id(chip->adapter));
++	chg_dev = bus_find_device_by_name(&i2c_bus_type, NULL, chg_name);
++	if (!chg_dev)
++		return;
++
++	chg_map = dev_get_regmap(chg_dev, NULL);
++	if (chg_map && regmap_read(chg_map, 0x07, &cnfg00) == 0) {
++		/* Leave OTG boost mode (0x0a) untouched */
++		if ((cnfg00 & 0x0a) != 0x0a) {
++			if (chip->charge_control_end_threshold < 100 &&
++			    (int)soc >= chip->charge_control_end_threshold) {
++				if (cnfg00 & 0x01)
++					regmap_update_bits(chg_map, 0x07, 0x05, 0x04);
++			} else if (chip->charge_control_end_threshold >= 100 ||
++				   (int)soc <= chip->charge_control_end_threshold - 2) {
++				if (!(cnfg00 & 0x01))
++					regmap_update_bits(chg_map, 0x07, 0x05, 0x05);
++			}
++		}
++	}
++	put_device(chg_dev);
++}
++
+ static int max17042_get_status(struct max17042_chip *chip, int *status)
+ {
+ 	int ret, charge_full, charge_now;
+@@ -355,6 +396,10 @@
+ 			return ret;
+ 
+ 		val->intval = data >> 8;
++		max17042_sync_charge_limit(chip);
++		break;
++	case POWER_SUPPLY_PROP_CHARGE_CONTROL_END_THRESHOLD:
++		val->intval = chip->charge_control_end_threshold;
+ 		break;
+ 	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
+ 		ret = regmap_read(map, MAX17042_DesignCap, &data);
+@@ -507,6 +552,13 @@
+ 	int8_t temp;
+ 
+ 	switch (psp) {
++	case POWER_SUPPLY_PROP_CHARGE_CONTROL_END_THRESHOLD:
++		if (val->intval < 50 || val->intval > 100)
++			return -EINVAL;
++		chip->charge_control_end_threshold = val->intval;
++		max17042_sync_charge_limit(chip);
++		power_supply_changed(psy);
++		break;
+ 	case POWER_SUPPLY_PROP_TEMP_ALERT_MIN:
+ 		ret = regmap_read(map, MAX17042_TALRT_Th, &data);
+ 		if (ret < 0)
+@@ -550,6 +602,7 @@
+ 	switch (psp) {
+ 	case POWER_SUPPLY_PROP_TEMP_ALERT_MIN:
+ 	case POWER_SUPPLY_PROP_TEMP_ALERT_MAX:
++	case POWER_SUPPLY_PROP_CHARGE_CONTROL_END_THRESHOLD:
+ 		ret = 1;
+ 		break;
+ 	default:
+@@ -1179,7 +1232,9 @@
+ 		return -ENOMEM;
+ 
+ 	chip->dev = dev;
++	chip->adapter = adapter;
+ 	chip->chip_type = chip_type;
++	chip->charge_control_end_threshold = 100;
+ 
+ 	if (chip->chip_type == MAXIM_DEVICE_TYPE_MAX77759)
+ 		regmap_config = &max77759_fg_regmap_cfg;
