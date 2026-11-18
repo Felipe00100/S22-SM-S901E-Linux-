@@ -34,6 +34,7 @@ for p in \
 	"$T/sc8280xp-mi2s-codec-fmt-sysclk.patch" \
 	"$U/local-sc8280xp-cs35l41-pll-reference.patch" \
 	"$T/max17042-max77705-i2c-id.patch" \
+	"$U/local-max17042-r0q-rsns-status-valrt.patch" \
 	"$T/max77705-charger-otg-regulator.patch" \
 	"$T/max77705-charger-battery-info.patch" \
 	"$T/max77705-charger-otg-shutdown.patch" \
@@ -48,8 +49,10 @@ for p in \
 	"$U/local-sm8450-qmp-combo-usb3-tuning.patch" \
 	"$U/local-dwc3-qcom-role-vbus-override.patch" \
 	"$U/local-max77705-typec-dp-altmode.patch" \
+	"$U/local-max77705-usbc-typec-rp-ilim.patch" \
 	"$U/local-sm8450-ipa-v5.1.patch" \
 	"$U/local-ak7375-s22-vcm.patch" \
+	"$U/local-qcom-q6v5-disable-handover-irq.patch" \
 	; do
 	echo "  $(basename "$p")"
 	patch -p1 --forward < "$p"
