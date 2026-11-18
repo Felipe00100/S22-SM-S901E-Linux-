@@ -1,4 +1,4 @@
-Subject: [PATCH] usb: dwc3: qcom: drive VBUS/LANE0_PWR_PRESENT override from target role
+Subject: [PATCH] usb: dwc3: qcom: role-driven VBUS override and idle DDR interconnect gating
 
 SPDX-License-Identifier: GPL-2.0-only
 
@@ -12,12 +12,108 @@ Drive dwc3_qcom_vbus_override_enable() from (next_role == USB_ROLE_DEVICE)
 and start current_role at USB_ROLE_NONE when usb-role-switch is used, while
 preserving the initial override for default peripheral mode.
 
-Authored with Gemini 4 Carbon.
+Additionally, gate the usb-ddr / apps-usb interconnect paths when role is
+USB_ROLE_NONE (and drop average DDR floor to 0 / peak to 200 MB/s) so USB
+does not pin SM8450 DDR at 1555 MHz while unplugged or idle.
+
 ---
 diff --git a/drivers/usb/dwc3/dwc3-qcom.c b/drivers/usb/dwc3/dwc3-qcom.c
 --- a/drivers/usb/dwc3/dwc3-qcom.c
 +++ b/drivers/usb/dwc3/dwc3-qcom.c
-@@ -570,10 +570,7 @@
+@@ -43,10 +43,10 @@
+ #define SDM845_DWC3_CORE_SIZE			0xcd00
+ 
+ /* Interconnect path bandwidths in MBps */
+-#define USB_MEMORY_AVG_HS_BW MBps_to_icc(240)
+-#define USB_MEMORY_PEAK_HS_BW MBps_to_icc(700)
+-#define USB_MEMORY_AVG_SS_BW  MBps_to_icc(1000)
+-#define USB_MEMORY_PEAK_SS_BW MBps_to_icc(2500)
++#define USB_MEMORY_AVG_HS_BW 0
++#define USB_MEMORY_PEAK_HS_BW MBps_to_icc(200)
++#define USB_MEMORY_AVG_SS_BW 0
++#define USB_MEMORY_PEAK_SS_BW MBps_to_icc(200)
+ #define APPS_USB_AVG_BW 0
+ #define APPS_USB_PEAK_BW MBps_to_icc(40)
+ 
+@@ -83,6 +83,7 @@
+ 	bool			pm_suspended;
+ 	struct icc_path		*icc_path_ddr;
+ 	struct icc_path		*icc_path_apps;
++	bool			icc_enabled;
+ 
+ 	enum usb_role		current_role;
+ };
+@@ -132,30 +133,42 @@
+ {
+ 	int ret;
+ 
++	if (qcom->icc_enabled)
++		return 0;
++
+ 	ret = icc_enable(qcom->icc_path_ddr);
+ 	if (ret)
+ 		return ret;
+ 
+ 	ret = icc_enable(qcom->icc_path_apps);
+-	if (ret)
++	if (ret) {
+ 		icc_disable(qcom->icc_path_ddr);
++		return ret;
++	}
+ 
+-	return ret;
++	qcom->icc_enabled = true;
++	return 0;
+ }
+ 
+ static int dwc3_qcom_interconnect_disable(struct dwc3_qcom *qcom)
+ {
+ 	int ret;
+ 
++	if (!qcom->icc_enabled)
++		return 0;
++
+ 	ret = icc_disable(qcom->icc_path_ddr);
+ 	if (ret)
+ 		return ret;
+ 
+ 	ret = icc_disable(qcom->icc_path_apps);
+-	if (ret)
++	if (ret) {
+ 		icc_enable(qcom->icc_path_ddr);
++		return ret;
++	}
+ 
+-	return ret;
++	qcom->icc_enabled = false;
++	return 0;
+ }
+ 
+ /**
+@@ -202,6 +215,7 @@
+ 		goto put_path_apps;
+ 	}
+ 
++	qcom->icc_enabled = true;
+ 	return 0;
+ 
+ put_path_apps:
+@@ -384,9 +398,11 @@
+ 	if (ret < 0)
+ 		return ret;
+ 
+-	ret = dwc3_qcom_interconnect_enable(qcom);
+-	if (ret)
+-		dev_warn(qcom->dev, "failed to enable interconnect: %d\n", ret);
++	if (qcom->current_role != USB_ROLE_NONE) {
++		ret = dwc3_qcom_interconnect_enable(qcom);
++		if (ret)
++			dev_warn(qcom->dev, "failed to enable interconnect: %d\n", ret);
++	}
+ 
+ 	/* Clear existing events from PHY related to L2 in/out */
+ 	for (i = 0; i < qcom->num_ports; i++) {
+@@ -570,10 +586,11 @@
  		return;
  	}
  
@@ -26,10 +122,14 @@ diff --git a/drivers/usb/dwc3/dwc3-qcom.c b/drivers/usb/dwc3/dwc3-qcom.c
 -	else if (qcom->current_role != USB_ROLE_DEVICE)
 -		dwc3_qcom_vbus_override_enable(qcom, true);
 +	dwc3_qcom_vbus_override_enable(qcom, next_role == USB_ROLE_DEVICE);
++	if (next_role == USB_ROLE_NONE)
++		dwc3_qcom_interconnect_disable(qcom);
++	else
++		dwc3_qcom_interconnect_enable(qcom);
  
  	pm_runtime_mark_last_busy(qcom->dev);
  	pm_runtime_put_sync(qcom->dev);
-@@ -690,12 +687,12 @@
+@@ -690,12 +707,12 @@
  	} else if (qcom->mode == USB_DR_MODE_PERIPHERAL) {
  		qcom->current_role = USB_ROLE_DEVICE;
  		dwc3_qcom_vbus_override_enable(qcom, true);
@@ -47,3 +147,13 @@ diff --git a/drivers/usb/dwc3/dwc3-qcom.c b/drivers/usb/dwc3/dwc3-qcom.c
  	}
  
  	qcom->dwc.glue_ops = &dwc3_qcom_glue_ops;
+@@ -715,6 +732,9 @@
+ 	if (ret)
+ 		goto remove_core;
+ 
++	if (qcom->current_role == USB_ROLE_NONE)
++		dwc3_qcom_interconnect_disable(qcom);
++
+ 	wakeup_source = of_property_read_bool(dev->of_node, "wakeup-source");
+ 	device_init_wakeup(&pdev->dev, wakeup_source);
+ 
