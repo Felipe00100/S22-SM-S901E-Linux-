@@ -1415,14 +1415,12 @@
 					regulator-name = "s2mpb02-l6";
 					regulator-min-microvolt = <1800000>;
 					regulator-max-microvolt = <1800000>;
-					regulator-always-on;
 				};
 
 				vreg_cam_wide_vio: ldo7 {
 					regulator-name = "s2mpb02-l7";
 					regulator-min-microvolt = <1800000>;
 					regulator-max-microvolt = <1800000>;
-					regulator-always-on;
 				};
 
 				vreg_cam_uw_vcustom1: ldo8 {
@@ -1435,14 +1433,12 @@
 					regulator-name = "s2mpb02-l9";
 					regulator-min-microvolt = <1800000>;
 					regulator-max-microvolt = <1800000>;
-					regulator-always-on;
 				};
 
 				vreg_s2mpb02_l10: ldo10 {
 					regulator-name = "s2mpb02-l10";
 					regulator-min-microvolt = <1800000>;
 					regulator-max-microvolt = <1800000>;
-					regulator-always-on;
 				};
 
 				vreg_s2mpb02_l11: ldo11 {
