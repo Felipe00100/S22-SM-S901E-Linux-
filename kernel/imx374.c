@@ -69,6 +69,7 @@ struct imx374_mode {
 	u32 width;
 	u32 height;
 	u32 hts;
+	u32 vts_min;
 	u32 vts_def;
 	u64 pixel_rate;
 	u32 link_freq_idx;
@@ -82,7 +83,8 @@ static const struct imx374_mode imx374_modes[] = {
 		.width = 1616,
 		.height = 912,
 		.hts = 19504,
-		.vts_def = 1432,
+		.vts_min = 1432,
+		.vts_def = 1790,
 		.pixel_rate = 837200000ULL,
 		.link_freq_idx = 0,
 		.crop = {
@@ -98,7 +100,8 @@ static const struct imx374_mode imx374_modes[] = {
 		.width = 3648,
 		.height = 2736,
 		.hts = 9864,
-		.vts_def = 2826,
+		.vts_min = 5652,
+		.vts_def = 5652,
 		.pixel_rate = 837200000ULL,
 		.link_freq_idx = 0,
 		.crop = {
@@ -319,7 +322,7 @@ static int imx374_init_controls(struct imx374 *imx374)
 		imx374->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	imx374->vblank = v4l2_ctrl_new_std(hdlr, &imx374_ctrl_ops,
-					   V4L2_CID_VBLANK, IMX374_VBLANK_MIN,
+					   V4L2_CID_VBLANK, mode->vts_min - mode->height,
 					   IMX374_VTS_MAX - mode->height, 1,
 					   vblank_def);
 
@@ -435,7 +438,7 @@ static int imx374_set_pad_format(struct v4l2_subdev *sd,
 		__v4l2_ctrl_modify_range(imx374->pixel_rate, mode->pixel_rate,
 					 mode->pixel_rate, 1, mode->pixel_rate);
 		__v4l2_ctrl_modify_range(imx374->hblank, hblank, hblank, 1, hblank);
-		__v4l2_ctrl_modify_range(imx374->vblank, IMX374_VBLANK_MIN,
+		__v4l2_ctrl_modify_range(imx374->vblank, mode->vts_min - mode->height,
 					 IMX374_VTS_MAX - mode->height, 1, vblank);
 		__v4l2_ctrl_s_ctrl(imx374->vblank, vblank);
 		__v4l2_ctrl_modify_range(imx374->exposure, IMX374_EXPOSURE_MIN,
