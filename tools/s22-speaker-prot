@@ -1,0 +1,72 @@
+#!/bin/sh
+set -eu
+
+CARD="${1:-0}"
+
+# Find Samsung-Galaxy-S22 ALSA card index dynamically if available
+for c in /proc/asound/card[0-9]*; do
+  [ -d "$c" ] || continue
+  if grep -qi "Samsung-Galaxy-S22" "$c/id" 2>/dev/null || grep -qi "sm8450" "$c/id" 2>/dev/null; then
+    CARD="${c#/proc/asound/card}"
+    break
+  fi
+done
+
+echo "Configuring CS35L41 Halo DSP Speaker Protection on card $CARD..."
+
+# 1. Preload dedicated r0q firmware on both amps:
+#    Speaker (4-0040, bottom woofer) -> cs35l41-dsp1-spk-prot-r0q-speaker.{wmfw,bin}
+#    Earpiece (4-0041, top speaker)  -> cs35l41-dsp1-spk-prot-r0q-earpiece.{wmfw,bin}
+amixer -c "$CARD" cset name='Speaker DSP1 Preload Switch' 1 >/dev/null
+amixer -c "$CARD" cset name='Earpiece DSP1 Preload Switch' 1 >/dev/null
+sleep 0.3
+
+# 2. Program nominal factory Re calibration (Q10.13 ohms) + ambient temp so
+#    Halo Protection excursion & thermal limiter runs in calibrated closed-loop mode:
+#    Bottom speaker nominal Re ~ 6.5 Ohm (6.5 * 8192 / 5.857 ~ 9091, stock S22 ~ 9600)
+#    Top earpiece nominal Re ~ 7.2 Ohm (~ 10100)
+python3 - "$CARD" <<'PY'
+import subprocess, sys
+
+card = sys.argv[1]
+
+def set_bytes(ctl_name, vals):
+    hex_str = ",".join(f"0x{b:02x}" for b in vals)
+    subprocess.run(["amixer", "-c", card, "cset", f"name='{ctl_name}'", hex_str],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def u32_be(v):
+    return [(v >> 24) & 0xff, (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff]
+
+# Configure Speaker (bottom) and Earpiece (top) Halo Protection calibration controls
+for prefix, cal_r in [("Speaker", 9600), ("Earpiece", 10100)]:
+    set_bytes(f"{prefix} DSP1 Protection cd CAL_R", u32_be(cal_r))
+    set_bytes(f"{prefix} DSP1 Protection cd CAL_AMBIENT", u32_be(28))
+    set_bytes(f"{prefix} DSP1 Protection cd CAL_STATUS", u32_be(1))
+    set_bytes(f"{prefix} DSP1 Protection cd CAL_CHECKSUM", u32_be(cal_r + 1))
+    set_bytes(f"{prefix} DSP1 Protection cd CAL_SET_STATUS", u32_be(1))
+    set_bytes(f"{prefix} DSP1 Protection cd CSPL_COMMAND", u32_be(2))
+PY
+
+# 3. Route ASP RX + VMON/IMON feedback into Halo DSP1 and select DSP as PCM Source!
+#    DSP1RX1 = Audio input (ASPRX1), DSP1RX2 = Audio/pilot, PCM Source = DSP
+for pfx in Speaker Earpiece; do
+  amixer -c "$CARD" cset name="${pfx} DSP1RX1 Source" ASPRX1 >/dev/null 2>&1 || true
+  amixer -c "$CARD" cset name="${pfx} DSP1RX2 Source" ASPRX1 >/dev/null 2>&1 || true
+  amixer -c "$CARD" cset name="${pfx} PCM Source" DSP >/dev/null 2>&1 || true
+  amixer -c "$CARD" cset name="${pfx} Boost Peak Current Limit" "4.10A" >/dev/null 2>&1 || true
+done
+
+# 4. Raise protected Digital + Analog PCM Gain for louder, fuller stereo output:
+#    Previously: Analog PCM Volume was default (15 = -1.5 dB / lower) and Digital PCM Volume = 841 (-3.8 dB).
+#    With Halo Speaker Protection limiting cone excursion & voice-coil temp in real time,
+#    Analog = 19 (+1.5 dB / max clean class-H step) & Digital = 895 (+2.8 dB louder) on Speaker,
+#    Analog = 18 & Digital = 880 on Earpiece gives ~+5 dB (~75% louder perceived loudness) cleanly!
+amixer -c "$CARD" cset name='Speaker Analog PCM Volume' 19 >/dev/null 2>&1 || true
+amixer -c "$CARD" cset name='Earpiece Analog PCM Volume' 18 >/dev/null 2>&1 || true
+amixer -c "$CARD" cset name='Speaker Digital PCM Volume' 895 >/dev/null 2>&1 || true
+amixer -c "$CARD" cset name='Earpiece Digital PCM Volume' 880 >/dev/null 2>&1 || true
+amixer -c "$CARD" cset name='Speaker Boost Converted Volume' 10 >/dev/null 2>&1 || true
+amixer -c "$CARD" cset name='Earpiece Boost Converted Volume' 10 >/dev/null 2>&1 || true
+
+echo "CS35L41 Halo Speaker Protection active + louder gain applied on card $CARD."

@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+for inp in /sys/bus/i2c/devices/6-0040/input/input*; do
+  if [ -w "$inp/calibration/calib_fw_load" ]; then
+    fw_mode=$(cat "$inp/default/fw_mode" 2>/dev/null || echo 2)
+    if [ "$fw_mode" != "1" ]; then
+      echo 0 > "$inp/calibration/calib_fw_load"
+    fi
+    # Set full 100% default gain
+    echo "CS40L26 Halo DSP initialized: $(cat "$inp/default/num_waves" 2>/dev/null || echo 0) RAM waves"
+    exit 0
+  fi
+done

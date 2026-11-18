@@ -3,6 +3,8 @@
 /dts-v1/;
 
 #include <dt-bindings/interconnect/qcom,sm8450.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/leds/common.h>
 #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
 #include <dt-bindings/media/video-interfaces.h>
 #include <dt-bindings/usb/pd.h>
@@ -473,6 +475,22 @@
 			regulator-always-on;
 		};
 
+		/* Ultrasonic fingerprint VDD_BTP_1P8 (stock pm8350c_l6, off in idle) */
+		vreg_l6c_1p8: ldo6 {
+			regulator-name = "VDD_BTP_1P8";
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+
+		/* NFC PVDD (stock pm8350c_l13, PN547/SN110 1.8 V) */
+		vreg_l13c_1p8: ldo13 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+			regulator-always-on;
+		};
+
 		vreg_l1c_1p8: ldo1 {
 			regulator-min-microvolt = <1800000>;
 			regulator-max-microvolt = <1800000>;
@@ -819,6 +837,7 @@
 		pinctrl-0 = <&cs35l41_default>;
 		pinctrl-names = "default";
 		sound-name-prefix = "Earpiece";
+		cirrus,subsystem-id = "r0q";
 		cirrus,boost-type = <0>;
 		cirrus,boost-peak-milliamp = <4100>;
 		cirrus,boost-ind-nanohenry = <1000>;
@@ -836,6 +855,7 @@
 		interrupts = <19 IRQ_TYPE_LEVEL_LOW>;
 		reset-gpios = <&tlmm 183 GPIO_ACTIVE_HIGH>;
 		sound-name-prefix = "Speaker";
+		cirrus,subsystem-id = "r0q";
 		/* Stock: the bottom speaker is the right channel, the top (earpiece) the left */
 		cirrus,right-channel-amp;
 		cirrus,boost-type = <0>;
@@ -1361,25 +1381,58 @@
 
 &i2c9 {
 	clock-frequency = <400000>;
-	pinctrl-0 = <&qup_i2c9_data_clk &cs40l26_reset_deassert>;
+	pinctrl-0 = <&qup_i2c9_data_clk &cs40l26_reset_default>;
 	pinctrl-names = "default";
 
 	status = "okay";
 
-	/* Bound by the out-of-tree cs40l26-rom-vibra driver (ROM effects, attempt 34) */
+	/* Cirrus Logic CS40L26A Halo Core DSP LRA haptics (stock DTBO fragment@99) */
 	haptics@40 {
 		compatible = "cirrus,cs40l26a";
 		reg = <0x40>;
+		interrupts-extended = <&pm8350_gpios 9 IRQ_TYPE_LEVEL_LOW>;
+		reset-gpios = <&tlmm 180 GPIO_ACTIVE_HIGH>;
+		pinctrl-0 = <&cs40l26_irq_default>;
+		pinctrl-names = "default";
+		cirrus,fw-defer;
+		cirrus,asp-gain-scale-pct = <0x3a>;
+
+		svc-le1 {
+			cirrus,min = <0x29f>;
+			cirrus,max = <0x5e5>;
+			cirrus,index = <1>;
+		};
+
+		svc-le2 {
+			cirrus,min = <0x5e6>;
+			cirrus,max = <0x92c>;
+			cirrus,index = <2>;
+		};
+
+		svc-le3 {
+			cirrus,min = <0x92d>;
+			cirrus,max = <0xd1c>;
+			cirrus,index = <3>;
+		};
+	};
+};
+
+&pm8350_gpios {
+	cs40l26_irq_default: cs40l26-irq-default-state {
+		pins = "gpio9";
+		function = "normal";
+		power-source = <1>;
+		bias-pull-up;
+		input-enable;
 	};
 };
 
 &tlmm {
-	cs40l26_reset_deassert: cs40l26-reset-deassert-state {
+	cs40l26_reset_default: cs40l26-reset-default-state {
 		pins = "gpio180";
 		function = "gpio";
 		drive-strength = <2>;
 		bias-disable;
-		output-high;
 	};
 };
 
@@ -2074,4 +2127,133 @@
 
 &cpu7_bottom_alert1 {
 	temperature = <78000>;
+};
+
+/*
+ * NFC: NXP PN547/SN110 on QUPv3 SE17 (i2c@888000, gpio64/65).
+ * Stock Samsung DTBO fragment@88/89: pn547@28, VEN gpio66, IRQ gpio71,
+ * CLK_REQ gpio35, PVDD pm8350c_l13 1.8 V.
+ */
+&i2c17 {
+	status = "okay";
+	clock-frequency = <400000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&qup_i2c17_data_clk>;
+
+	nfc@28 {
+		compatible = "nxp,pn547", "nxp,nxp-nci-i2c";
+		reg = <0x28>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <71 IRQ_TYPE_EDGE_RISING>;
+		enable-gpios = <&tlmm 66 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&nfc_ven_default &nfc_irq_default &nfc_clkreq_default>;
+	};
+};
+
+/*
+ * PM8350C SPMI flash LED controller (stock qcom,flash_led@ee00) alongside
+ * S2MPB02 FLED + gpio87 torch/flash control.
+ */
+&pm8350c_flash {
+	status = "okay";
+
+	led-0 {
+		function = LED_FUNCTION_FLASH;
+		color = <LED_COLOR_ID_WHITE>;
+		led-sources = <1>;
+		led-max-microamp = <300000>;
+		flash-max-microamp = <1000000>;
+		flash-max-timeout-us = <500000>;
+		function-enumerator = <0>;
+	};
+
+	led-1 {
+		function = LED_FUNCTION_FLASH;
+		color = <LED_COLOR_ID_WHITE>;
+		led-sources = <2>;
+		led-max-microamp = <300000>;
+		flash-max-microamp = <1000000>;
+		flash-max-timeout-us = <500000>;
+		function-enumerator = <1>;
+	};
+
+	led-2 {
+		function = LED_FUNCTION_FLASH;
+		color = <LED_COLOR_ID_WHITE>;
+		led-sources = <3>;
+		led-max-microamp = <300000>;
+		flash-max-microamp = <1000000>;
+		flash-max-timeout-us = <500000>;
+		function-enumerator = <2>;
+	};
+
+	led-3 {
+		function = LED_FUNCTION_FLASH;
+		color = <LED_COLOR_ID_WHITE>;
+		led-sources = <4>;
+		led-max-microamp = <300000>;
+		flash-max-microamp = <1000000>;
+		flash-max-timeout-us = <500000>;
+		function-enumerator = <3>;
+	};
+};
+
+/*
+ * Qualcomm 3D Sonic Gen 2 (QBT2608 / QBT2000) Ultrasonic Fingerprint
+ * Linux hardware bridge (stock DTBO fragment@95..97):
+ * VDD_BTP_1P8 (pm8350c_l6, off in idle), IPC gpio88, WUHB gpio89.
+ */
+/ {
+	fingerprint {
+		compatible = "qcom,qbt2000";
+		vdd-supply = <&vreg_l6c_1p8>;
+		ipc-gpios = <&tlmm 88 GPIO_ACTIVE_HIGH>;
+		wuhb-gpios = <&tlmm 89 GPIO_ACTIVE_HIGH>;
+		qcom,chipid = "QBT2608";
+		qcom,modelinfo = "S90X";
+		qcom,position = "31.17,0.00,7.50,8.25,14.80,14.80,13.00,13.00,5.00";
+		pinctrl-names = "default";
+		pinctrl-0 = <&btp_ipc_default &btp_wuhb_default>;
+	};
+};
+
+&tlmm {
+	nfc_ven_default: nfc-ven-default-state {
+		pins = "gpio66";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+		output-low;
+	};
+
+	nfc_irq_default: nfc-irq-default-state {
+		pins = "gpio71";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-up;
+		input-enable;
+	};
+
+	nfc_clkreq_default: nfc-clkreq-default-state {
+		pins = "gpio35";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+		input-enable;
+	};
+
+	btp_ipc_default: btp-ipc-default-state {
+		pins = "gpio88";
+		function = "gpio";
+		input-enable;
+		bias-pull-down;
+	};
+
+	btp_wuhb_default: btp-wuhb-default-state {
+		pins = "gpio89";
+		function = "gpio";
+		input-enable;
+		bias-pull-down;
+	};
 };
