@@ -1080,6 +1080,7 @@ static int s6e3fac_prepare(struct drm_panel *panel)
 			s6e3fac_apply_brightness_locked(ctx);
 			s6e3fac_schedule_idle_check_locked(ctx);
 			mutex_unlock(&ctx->lock);
+			kobject_uevent(&ctx->dsi->dev.kobj, KOBJ_CHANGE);
 			return 0;
 		}
 		dev_warn(dev, "AOD exit failed (%d), falling back to cold reset\n", ret);
@@ -1112,6 +1113,7 @@ static int s6e3fac_prepare(struct drm_panel *panel)
 	s6e3fac_schedule_idle_check_locked(ctx);
 
 	mutex_unlock(&ctx->lock);
+	kobject_uevent(&ctx->dsi->dev.kobj, KOBJ_CHANGE);
 	return 0;
 }
 
@@ -1192,6 +1194,7 @@ static int s6e3fac_unprepare(struct drm_panel *panel)
 	if (ctx->in_aod) {
 		ctx->prepared = false;
 		mutex_unlock(&ctx->lock);
+		kobject_uevent(&ctx->dsi->dev.kobj, KOBJ_CHANGE);
 		return 0;
 	}
 
@@ -1211,6 +1214,7 @@ static int s6e3fac_unprepare(struct drm_panel *panel)
 	ctx->applied_rr = 0;
 
 	mutex_unlock(&ctx->lock);
+	kobject_uevent(&ctx->dsi->dev.kobj, KOBJ_CHANGE);
 	return 0;
 }
 

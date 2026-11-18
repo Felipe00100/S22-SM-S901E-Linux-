@@ -5,6 +5,7 @@ After=systemd-udevd.service iio-sensor-proxy.service
 [Service]
 Type=simple
 ExecStart=/usr/local/lib/s22/s22-display-extrasd.sh
+ExecStopPost=-/bin/sh -c 'echo 1 > /sys/bus/spi/devices/spi0.0/sense_enable 2>/dev/null || true'
 Restart=always
 RestartSec=3
 
