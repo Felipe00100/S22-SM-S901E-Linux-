@@ -5,3 +5,4 @@ if [ -e /dev/dri/card1 ] && [ -e /dev/dri/card0 ]; then
     export KWIN_DRM_DEVICES="/dev/dri/card1:/dev/dri/card0"
 fi
 export KWIN_COMPOSE=O2
+export KWIN_DISABLE_UDMABUF_IMPORT=1

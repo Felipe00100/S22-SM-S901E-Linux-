@@ -511,6 +511,54 @@
  * dispcc_sm8450 is still blacklisted on the phone, so by default this stays deferred and the
  * simple-framebuffer keeps working; "modprobe dispcc_sm8450" brings the real display path up.
  */
+/*
+ * Asymmetric CPU capacity and dynamic power coefficients from stock SM8450 (waipio.dtsi):
+ * - cpu0..3: Cortex-A510 (LITTLE, 1.78 GHz)
+ * - cpu4..6: Cortex-A710 (Big, 2.50 GHz)
+ * - cpu7:    Cortex-X2   (Prime, 2.84 GHz)
+ * Enables EAS (Energy-Aware Scheduling) and misfit task migration so UI threads
+ * (plasmashell, kwin) migrate off LITTLE cores while idle tasks stay on LITTLE cores.
+ */
+&cpu0 {
+	capacity-dmips-mhz = <1024>;
+	dynamic-power-coefficient = <100>;
+};
+
+&cpu1 {
+	capacity-dmips-mhz = <1024>;
+	dynamic-power-coefficient = <100>;
+};
+
+&cpu2 {
+	capacity-dmips-mhz = <1024>;
+	dynamic-power-coefficient = <100>;
+};
+
+&cpu3 {
+	capacity-dmips-mhz = <1024>;
+	dynamic-power-coefficient = <100>;
+};
+
+&cpu4 {
+	capacity-dmips-mhz = <2253>;
+	dynamic-power-coefficient = <251>;
+};
+
+&cpu5 {
+	capacity-dmips-mhz = <2253>;
+	dynamic-power-coefficient = <251>;
+};
+
+&cpu6 {
+	capacity-dmips-mhz = <2253>;
+	dynamic-power-coefficient = <251>;
+};
+
+&cpu7 {
+	capacity-dmips-mhz = <2386>;
+	dynamic-power-coefficient = <396>;
+};
+
 &mdss {
 	status = "okay";
 };
