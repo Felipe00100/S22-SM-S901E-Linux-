@@ -5,6 +5,9 @@ TurnOffDisplayIdleTimeoutSec=60
 TurnOffDisplayIdleTimeoutWhenLockedSec=5
 TurnOffDisplayWhenIdle=true
 
+[AC][SuspendSession]
+AutoSuspendAction=0
+
 [Battery][Display]
 DimDisplayIdleTimeoutSec=25
 DimDisplayWhenIdle=true
@@ -12,9 +15,17 @@ TurnOffDisplayIdleTimeoutSec=35
 TurnOffDisplayIdleTimeoutWhenLockedSec=4
 TurnOffDisplayWhenIdle=true
 
+[Battery][SuspendSession]
+AutoSuspendAction=1
+AutoSuspendIdleTimeoutSec=60
+
 [LowBattery][Display]
 DimDisplayIdleTimeoutSec=15
 DimDisplayWhenIdle=true
 TurnOffDisplayIdleTimeoutSec=20
 TurnOffDisplayIdleTimeoutWhenLockedSec=3
 TurnOffDisplayWhenIdle=true
+
+[LowBattery][SuspendSession]
+AutoSuspendAction=1
+AutoSuspendIdleTimeoutSec=30

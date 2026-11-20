@@ -35,7 +35,7 @@
 	chassis-type = "handset";
 
 	chosen {
-		bootargs = "pmos_boot_uuid=BOOT-PARTITION-UUID pmos_root_uuid=ROOT-PARTITION-UUID pmos_rootfsopts=defaults clk_ignore_unused pd_ignore_unused ignore_loglevel console=tty0 panic=0 log_buf_len=4M";
+		bootargs = "pmos_boot_uuid=BOOT-PARTITION-UUID pmos_root_uuid=ROOT-PARTITION-UUID pmos_rootfsopts=defaults clk_ignore_unused pd_ignore_unused fw_devlink.sync_state=timeout ignore_loglevel console=tty0 panic=0 log_buf_len=4M";
 		#address-cells = <2>;
 		#size-cells = <2>;
 		ranges;

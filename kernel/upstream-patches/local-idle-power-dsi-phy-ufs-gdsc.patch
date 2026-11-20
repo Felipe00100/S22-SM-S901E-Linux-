@@ -1,0 +1,217 @@
+Subject: [PATCH] power: sm8450: fix DSI PHY disp_cc ahb_clk prepare leak & UFS GDSC runtime PM
+
+SPDX-License-Identifier: GPL-2.0-only
+
+Fixes two major idle / deep-sleep power leaks on SM8450 (Galaxy S22 r0q):
+1. drivers/gpu/drm/msm/dsi/phy/dsi_phy.{c,h}: replace pm_clk_add("iface")
+   with explicit devm_clk_get("iface") + clk_prepare_enable/clk_disable_unprepare
+   in runtime and system sleep PM ops. pm_clk_suspend() only calls clk_disable()
+   without clk_unprepare(), leaving disp_cc_mdss_ahb_clk permanently prepared
+   (prepare_count=1), which pinned af00000.clock-controller active and held
+   mmcx and cx on at level 64 even with the screen off and during deep sleep.
+2. drivers/phy/qualcomm/phy-qcom-qmp-ufs.c & drivers/soc/qcom/ice.c: enable
+   runtime PM (pm_runtime_no_callbacks + symmetric get/put in power_on/off and
+   resume/suspend) so ufs_phy_gdsc can power collapse to off-0 when UFS is idle.
+---
+--- a/drivers/gpu/drm/msm/dsi/phy/dsi_phy.h
++++ b/drivers/gpu/drm/msm/dsi/phy/dsi_phy.h
+@@ -106,6 +106,7 @@
+ 	phys_addr_t lane_size;
+ 	int id;
+ 
++	struct clk *ahb_clk;
+ 	struct regulator_bulk_data *supplies;
+ 
+ 	struct msm_dsi_dphy_timing timing;
+--- a/drivers/gpu/drm/msm/dsi/phy/dsi_phy.c
++++ b/drivers/gpu/drm/msm/dsi/phy/dsi_phy.c
+@@ -3,9 +3,9 @@
+  * Copyright (c) 2015, The Linux Foundation. All rights reserved.
+  */
+ 
++#include <linux/clk.h>
+ #include <linux/clk-provider.h>
+ #include <linux/platform_device.h>
+-#include <linux/pm_clock.h>
+ #include <linux/pm_runtime.h>
+ #include <dt-bindings/phy/phy.h>
+ 
+@@ -683,20 +683,22 @@
+ 
+ 	platform_set_drvdata(pdev, phy);
+ 
+-	ret = devm_pm_runtime_enable(dev);
+-	if (ret)
+-		return ret;
++	phy->ahb_clk = devm_clk_get(dev, "iface");
++	if (IS_ERR(phy->ahb_clk))
++		return dev_err_probe(dev, PTR_ERR(phy->ahb_clk),
++				     "Unable to get iface clk\n");
+ 
+-	ret = devm_pm_clk_create(dev);
++	ret = devm_pm_runtime_enable(dev);
+ 	if (ret)
+ 		return ret;
+ 
+-	ret = pm_clk_add(dev, "iface");
+-	if (ret < 0)
+-		return dev_err_probe(dev, ret, "Unable to get iface clk\n");
+-
+ 	if (phy->cfg->ops.pll_init) {
++		ret = pm_runtime_resume_and_get(dev);
++		if (ret)
++			return ret;
++
+ 		ret = phy->cfg->ops.pll_init(phy);
++		pm_runtime_put_sync(dev);
+ 		if (ret)
+ 			return dev_err_probe(dev, ret,
+ 					     "PLL init failed; need separate clk driver\n");
+@@ -711,8 +713,24 @@
+ 	return 0;
+ }
+ 
++static int dsi_phy_runtime_suspend(struct device *dev)
++{
++	struct msm_dsi_phy *phy = dev_get_drvdata(dev);
++
++	clk_disable_unprepare(phy->ahb_clk);
++	return 0;
++}
++
++static int dsi_phy_runtime_resume(struct device *dev)
++{
++	struct msm_dsi_phy *phy = dev_get_drvdata(dev);
++
++	return clk_prepare_enable(phy->ahb_clk);
++}
++
+ static const struct dev_pm_ops dsi_phy_pm_ops = {
+-	SET_RUNTIME_PM_OPS(pm_clk_suspend, pm_clk_resume, NULL)
++	SET_RUNTIME_PM_OPS(dsi_phy_runtime_suspend, dsi_phy_runtime_resume, NULL)
++	SET_SYSTEM_SLEEP_PM_OPS(pm_runtime_force_suspend, pm_runtime_force_resume)
+ };
+ 
+ static struct platform_driver dsi_phy_platform_driver = {
+--- a/drivers/phy/qualcomm/phy-qcom-qmp-ufs.c
++++ b/drivers/phy/qualcomm/phy-qcom-qmp-ufs.c
+@@ -15,6 +15,7 @@
+ #include <linux/of_address.h>
+ #include <linux/phy/phy.h>
+ #include <linux/platform_device.h>
++#include <linux/pm_runtime.h>
+ #include <linux/regulator/consumer.h>
+ #include <linux/reset.h>
+ #include <linux/slab.h>
+@@ -1929,10 +1930,14 @@
+ 	void __iomem *pcs = qmp->pcs;
+ 	int ret;
+ 
++	ret = pm_runtime_resume_and_get(qmp->dev);
++	if (ret)
++		return ret;
++
+ 	ret = regulator_bulk_enable(cfg->num_vregs, qmp->vregs);
+ 	if (ret) {
+ 		dev_err(qmp->dev, "failed to enable regulators, err=%d\n", ret);
+-		return ret;
++		goto err_rpm_put;
+ 	}
+ 
+ 	ret = clk_bulk_prepare_enable(qmp->num_clks, qmp->clks);
+@@ -1944,6 +1949,8 @@
+ 
+ err_disable_regulators:
+ 	regulator_bulk_disable(cfg->num_vregs, qmp->vregs);
++err_rpm_put:
++	pm_runtime_put_sync(qmp->dev);
+ 	return ret;
+ }
+ 
+@@ -1997,6 +2004,8 @@
+ 
+ 	regulator_bulk_disable(cfg->num_vregs, qmp->vregs);
+ 
++	pm_runtime_put_sync(qmp->dev);
++
+ 	return 0;
+ }
+ 
+@@ -2248,6 +2257,11 @@
+ 
+ 	of_node_put(np);
+ 
++	pm_runtime_no_callbacks(dev);
++	ret = devm_pm_runtime_enable(dev);
++	if (ret)
++		return ret;
++
+ 	phy_provider = devm_of_phy_provider_register(dev, of_phy_simple_xlate);
+ 
+ 	return PTR_ERR_OR_ZERO(phy_provider);
+--- a/drivers/soc/qcom/ice.c
++++ b/drivers/soc/qcom/ice.c
+@@ -16,6 +16,7 @@
+ #include <linux/of.h>
+ #include <linux/of_platform.h>
+ #include <linux/platform_device.h>
++#include <linux/pm_runtime.h>
+ #include <linux/xarray.h>
+ 
+ #include <linux/firmware/qcom/qcom_scm.h>
+@@ -111,6 +112,7 @@
+ 	struct clk *core_clk;
+ 	struct clk *iface_clk;
+ 	bool use_hwkm;
++	bool use_rpm;
+ 	bool hwkm_init_complete;
+ 	u8 hwkm_version;
+ };
+@@ -315,14 +317,25 @@
+ 	struct device *dev = ice->dev;
+ 	int err;
+ 
++	if (ice->use_rpm) {
++		err = pm_runtime_resume_and_get(dev);
++		if (err)
++			return err;
++	}
++
+ 	err = clk_prepare_enable(ice->core_clk);
+ 	if (err) {
+ 		dev_err(dev, "Failed to enable core clock: %d\n", err);
++		if (ice->use_rpm)
++			pm_runtime_put_sync(dev);
+ 		return err;
+ 	}
+ 
+ 	err = clk_prepare_enable(ice->iface_clk);
+ 	if (err) {
++		clk_disable_unprepare(ice->core_clk);
++		if (ice->use_rpm)
++			pm_runtime_put_sync(dev);
+ 		dev_err(dev, "Failed to enable iface clock: %d\n", err);
+ 		return err;
+ 	}
+@@ -336,6 +349,8 @@
+ 	clk_disable_unprepare(ice->iface_clk);
+ 	clk_disable_unprepare(ice->core_clk);
+ 	ice->hwkm_init_complete = false;
++	if (ice->use_rpm)
++		pm_runtime_put_sync(ice->dev);
+ 
+ 	return 0;
+ }
+@@ -756,6 +771,12 @@
+ 		return PTR_ERR(engine);
+ 	}
+ 
++	engine->use_rpm = true;
++	pm_runtime_no_callbacks(&pdev->dev);
++	pm_runtime_set_active(&pdev->dev);
++	pm_runtime_get_noresume(&pdev->dev);
++	devm_pm_runtime_enable(&pdev->dev);
++
+ 	xa_store(&ice_handles, phandle, engine, GFP_KERNEL);
+ 
+ 	return 0;

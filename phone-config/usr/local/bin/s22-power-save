@@ -1,0 +1,34 @@
+#!/bin/sh
+set -eu
+
+# 1. Enable PCIe ASPM L1/L1ss (L1.1 + L1.2) power saving for QCA6490 WLAN (1c00000.pcie)
+if [ -w /sys/module/pcie_aspm/parameters/policy ]; then
+  echo powersupersave > /sys/module/pcie_aspm/parameters/policy 2>/dev/null || true
+fi
+for p in l0s_aspm l1_aspm l1_1_aspm l1_2_aspm l1_1_pcipm l1_2_pcipm; do
+  for f in /sys/bus/pci/devices/*/link/"$p"; do
+    [ -w "$f" ] && echo 1 > "$f" 2>/dev/null || true
+  done
+done
+
+# 2. Ensure Wi-Fi power_save is enabled on wlan0
+if command -v iw >/dev/null 2>&1 && [ -d /sys/class/net/wlan0 ]; then
+  iw dev wlan0 set power_save on 2>/dev/null || true
+fi
+
+# 3. Ensure Fingerprint VDD_BTP_1P8 stays off in idle unless explicitly enabled
+if [ -w /sys/class/fingerprint/fingerprint/power_enable ]; then
+  echo 0 > /sys/class/fingerprint/fingerprint/power_enable 2>/dev/null || true
+fi
+
+# 4. Allow unprivileged desktop/CLI battery charge limit control & restore saved limit
+if [ -e /sys/class/power_supply/max170xx_battery/charge_control_end_threshold ]; then
+  chmod 0666 /sys/class/power_supply/max170xx_battery/charge_control_end_threshold 2>/dev/null || true
+  touch /etc/s22-charge-limit.conf 2>/dev/null || true
+  chmod 0666 /etc/s22-charge-limit.conf 2>/dev/null || true
+  if [ -s /etc/s22-charge-limit.conf ]; then
+    cat /etc/s22-charge-limit.conf > /sys/class/power_supply/max170xx_battery/charge_control_end_threshold 2>/dev/null || true
+  fi
+fi
+
+echo "S22 power-save policy applied: ASPM=$(cat /sys/module/pcie_aspm/parameters/policy 2>/dev/null || echo N/A)"

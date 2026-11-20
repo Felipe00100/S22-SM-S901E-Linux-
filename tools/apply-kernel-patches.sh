@@ -61,6 +61,7 @@ for p in \
 	"$U/local-qcom-q6v5-disable-handover-irq.patch" \
 	"$U/local-msm-adreno730-w10-gpu-opt.patch" \
 	"$U/local-idle-power-adsp-dispcc-ufs.patch" \
+	"$U/local-idle-power-dsi-phy-ufs-gdsc.patch" \
 	; do
 	echo "  $(basename "$p")"
 	patch -p1 --forward < "$p"
@@ -176,7 +177,7 @@ echo "[4/5] Merging kernel/config-r0q.aarch64 + kernel/r0q.fragment..."
 cp "$R/config-r0q.aarch64" .config
 scripts/kconfig/merge_config.sh -m .config "$R/r0q.fragment"
 scripts/config --set-str INITRAMFS_SOURCE ""
-scripts/config --set-str CMDLINE "clk_ignore_unused pd_ignore_unused ignore_loglevel console=tty0 panic=0 log_buf_len=4M"
+scripts/config --set-str CMDLINE "clk_ignore_unused pd_ignore_unused fw_devlink.sync_state=timeout ignore_loglevel console=tty0 panic=0 log_buf_len=4M"
 scripts/config --disable LOCALVERSION_AUTO
 scripts/config --set-str SYSTEM_TRUSTED_KEYS ""
 scripts/config --set-str SYSTEM_REVOCATION_KEYS ""
