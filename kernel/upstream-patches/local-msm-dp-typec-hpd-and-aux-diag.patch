@@ -1,0 +1,120 @@
+Subject: [PATCH] drm/msm/dp & usb/typec: handle Type-C IRQ_HPD, AUX recalibration & diagnostics
+
+SPDX-License-Identifier: GPL-2.0-only
+
+1. Handle Type-C IRQ_HPD notifications in dp_display.c so sink-initiated
+   re-training and link-status interrupts from USB-C hubs/monitors are
+   serviced promptly.
+2. Log DPCD read failures, link training results, and SW vs HW AUX timeout
+   distinctions in dp_ctrl.c / dp_aux.c, and invoke phy_calibrate() on
+   DP_AUX_ERR_TOUT.
+3. Log SBU polarity/orientation switches in gpio-sbu-mux.c.
+---
+--- a/drivers/gpu/drm/msm/dp/dp_display.c
++++ b/drivers/gpu/drm/msm/dp/dp_display.c
+@@ -271,8 +271,10 @@
+ 	u8 dpcd[DP_RECEIVER_CAP_SIZE];
+ 
+ 	rc = drm_dp_read_dpcd_caps(dp->aux, dpcd);
+-	if (rc)
++	if (rc) {
++		DRM_ERROR("failed to read DPCD caps, rc=%d\n", rc);
+ 		goto end;
++	}
+ 
+ 	dp->link->lttpr_count = msm_dp_display_lttpr_init(dp, dpcd);
+ 
+@@ -1548,7 +1550,8 @@
+ 		if (hpd_link_status == ISR_HPD_REPLUG_COUNT) {
+ 			msm_dp_hpd_unplug_handle(dp);
+ 			msm_dp_hpd_plug_handle(dp);
+-		} else if (hpd_link_status == ISR_IRQ_HPD_PULSE_COUNT) {
++		} else if (hpd_link_status == ISR_IRQ_HPD_PULSE_COUNT ||
++			   (dp->plugged && dp->link->sink_count > 0)) {
+ 			msm_dp_irq_hpd_handle(dp);
+ 		} else {
+ 			msm_dp_hpd_plug_handle(dp);
+--- a/drivers/gpu/drm/msm/dp/dp_ctrl.c
++++ b/drivers/gpu/drm/msm/dp/dp_ctrl.c
+@@ -2297,7 +2297,7 @@
+ 			pixel_rate >>= 1;
+ 	}
+ 
+-	drm_dbg_dp(ctrl->drm_dev, "rate=%d, num_lanes=%d, pixel_rate=%lu\n",
++	DRM_INFO("msm_dp: training link rate=%d kHz, lanes=%d, pixel_rate=%lu kHz\n",
+ 		ctrl->link->link_params.rate, ctrl->link->link_params.num_lanes,
+ 		pixel_rate);
+ 
+--- a/drivers/gpu/drm/msm/dp/dp_aux.c
++++ b/drivers/gpu/drm/msm/dp/dp_aux.c
+@@ -408,6 +408,11 @@
+ 	if (ret < 0) {
+ 		if (aux->native) {
+ 			aux->retry_cnt++;
++			if (aux->retry_cnt == 1)
++				DRM_ERROR("dp_aux SW timeout (no IRQ): addr=0x%x ctrl=0x%x phy_int=0x%x\n",
++					  msg->address,
++					  msm_dp_read_aux(aux, REG_DP_AUX_CTRL),
++					  msm_dp_read_aux(aux, REG_DP_PHY_AUX_INTERRUPT_STATUS));
+ 			if (!(aux->retry_cnt % MAX_AUX_RETRIES))
+ 				phy_calibrate(aux->phy);
+ 		}
+@@ -415,23 +420,35 @@
+ 		if (msm_dp_aux_is_link_connected(msm_dp_aux))
+ 			msm_dp_aux_reset(aux);
+ 	} else {
+-		aux->retry_cnt = 0;
+ 		switch (aux->aux_error_num) {
+ 		case DP_AUX_ERR_NONE:
++			aux->retry_cnt = 0;
+ 			if (aux->read)
+ 				ret = msm_dp_aux_cmd_fifo_rx(aux, msg);
+ 			msg->reply = aux->native ? DP_AUX_NATIVE_REPLY_ACK : DP_AUX_I2C_REPLY_ACK;
+ 			break;
+ 		case DP_AUX_ERR_DEFER:
++			aux->retry_cnt = 0;
+ 			msg->reply = aux->native ? DP_AUX_NATIVE_REPLY_DEFER : DP_AUX_I2C_REPLY_DEFER;
+ 			break;
+ 		case DP_AUX_ERR_PHY:
+ 		case DP_AUX_ERR_ADDR:
+ 		case DP_AUX_ERR_NACK:
+ 		case DP_AUX_ERR_NACK_DEFER:
++			aux->retry_cnt = 0;
+ 			msg->reply = aux->native ? DP_AUX_NATIVE_REPLY_NACK : DP_AUX_I2C_REPLY_NACK;
+ 			break;
+ 		case DP_AUX_ERR_TOUT:
++			if (aux->native) {
++				aux->retry_cnt++;
++				if (aux->retry_cnt == 1)
++					DRM_ERROR("dp_aux HW timeout (DP_INTR_TIMEOUT): addr=0x%x ctrl=0x%x phy_int=0x%x\n",
++						  msg->address,
++						  msm_dp_read_aux(aux, REG_DP_AUX_CTRL),
++						  msm_dp_read_aux(aux, REG_DP_PHY_AUX_INTERRUPT_STATUS));
++				if (!(aux->retry_cnt % MAX_AUX_RETRIES))
++					phy_calibrate(aux->phy);
++			}
+ 			ret = -ETIMEDOUT;
+ 			break;
+ 		}
+--- a/drivers/usb/typec/mux/gpio-sbu-mux.c
++++ b/drivers/usb/typec/mux/gpio-sbu-mux.c
+@@ -53,6 +53,10 @@
+ 	if (swapped != sbu_mux->swapped)
+ 		gpiod_set_value_cansleep(sbu_mux->select_gpio, swapped);
+ 
++	if (enabled != sbu_mux->enabled || swapped != sbu_mux->swapped)
++		pr_info("gpio-sbu-mux: switch orient=%d -> enable=%d swapped=%d\n",
++			orientation, enabled, swapped);
++
+ 	sbu_mux->enabled = enabled;
+ 	sbu_mux->swapped = swapped;
+ 
+@@ -85,6 +89,8 @@
+ 		break;
+ 	}
+ 
++	pr_info("gpio-sbu-mux: mux mode=%lu -> enable=%d swapped=%d\n",
++		state->mode, sbu_mux->enabled, sbu_mux->swapped);
+ 	gpiod_set_value_cansleep(sbu_mux->enable_gpio, sbu_mux->enabled);
+ 
+ 	mutex_unlock(&sbu_mux->lock);

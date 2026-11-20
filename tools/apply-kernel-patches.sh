@@ -47,6 +47,10 @@ for p in \
 	"$U/local-sm8450-qmp-combo-usb3-tuning.patch" \
 	"$U/local-dwc3-qcom-role-vbus-override.patch" \
 	"$U/local-max77705-typec-dp-altmode.patch" \
+	"$U/local-max77705-charger-otg-ilim-1500.patch" \
+	"$U/local-max77705-dp-async-hpd.patch" \
+	"$U/local-sm8450-qmp-combo-dp-only-swing.patch" \
+	"$U/local-msm-dp-typec-hpd-and-aux-diag.patch" \
 	; do
 	echo "  $(basename "$p")"
 	patch -p1 --forward < "$p"

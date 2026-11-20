@@ -1,0 +1,22 @@
+Subject: [PATCH] power: supply: max77705: raise OTG VBUS boost current limit to 1500 mA
+
+SPDX-License-Identifier: GPL-2.0-only
+
+USB-C DisplayPort/HDMI hubs draw 600-1200 mA on VBUS during enumeration
+and DP-to-HDMI bridge startup. Raise the MAX77705 OTG boost current limit
+from 900 mA to 1500 mA (matching stock S22 capability) to prevent VBUS
+brownouts and hub disconnects.
+---
+--- a/drivers/power/supply/max77705_charger.c
++++ b/drivers/power/supply/max77705_charger.c
+@@ -621,8 +621,8 @@
+ 		goto err;
+ 
+ 	/* charge current 450mA(default) */
+-	/* otg current limit 900mA */
+-	err = regmap_field_write(chg->rfield[MAX77705_OTG_ILIM], MAX77705_OTG_ILIM_900);
++	/* otg current limit 1500mA */
++	err = regmap_field_write(chg->rfield[MAX77705_OTG_ILIM], MAX77705_OTG_ILIM_1500);
+ 	if (err)
+ 		goto err;
+ 
