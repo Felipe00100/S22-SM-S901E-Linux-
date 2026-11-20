@@ -72,3 +72,6 @@ CONFIG_ZRAM_BACKEND_LZ4=y
 # Attempt 11: touchscreen (upstream fts2ba61y patch) on spi-gpio
 CONFIG_SPI_GPIO=m
 CONFIG_TOUCHSCREEN_FTS2BA61Y=m
+
+# Force gcc/gpucc sync_state() timeout so ufs_phy_gdsc / usb30_prim_gdsc / pcie_0_gdsc can power off
+CONFIG_FW_DEVLINK_SYNC_STATE_TIMEOUT=y

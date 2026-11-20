@@ -50,6 +50,7 @@ for p in \
 	"$U/local-max77705-charger-mask-aicl-irq.patch" \
 	"$U/local-qcom-q6v5-disable-handover-irq.patch" \
 	"$U/local-idle-power-adsp-dispcc-ufs.patch" \
+	"$U/local-idle-power-dsi-phy-ufs-gdsc.patch" \
 	; do
 	echo "  $(basename "$p")"
 	patch -p1 --forward < "$p"

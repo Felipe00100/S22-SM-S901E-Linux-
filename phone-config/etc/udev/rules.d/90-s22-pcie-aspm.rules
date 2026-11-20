@@ -1,0 +1,1 @@
+ACTION=="add", SUBSYSTEM=="pci", RUN+="/bin/sh -c 'echo powersupersave > /sys/module/pcie_aspm/parameters/policy 2>/dev/null; for p in l0s_aspm l1_aspm l1_1_aspm l1_2_aspm l1_1_pcipm l1_2_pcipm; do [ -w /sys/bus/pci/devices/%k/link/$p ] && echo 1 > /sys/bus/pci/devices/%k/link/$p 2>/dev/null; done; true'"

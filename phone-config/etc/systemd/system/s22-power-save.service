@@ -1,0 +1,11 @@
+[Unit]
+Description=Samsung Galaxy S22 Idle Power Optimization (PCIe ASPM L1ss & Idle Peripherals)
+After=multi-user.target s22-wifi-late.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/s22-power-save
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
