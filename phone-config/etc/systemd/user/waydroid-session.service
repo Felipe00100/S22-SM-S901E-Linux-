@@ -1,0 +1,14 @@
+[Unit]
+Description=Waydroid User Session (bound to KWin Wayland)
+After=plasma-kwin_wayland.service waydroid-container.service
+PartOf=plasma-kwin_wayland.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/waydroid session start
+ExecStop=/usr/bin/waydroid session stop
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=graphical-session.target

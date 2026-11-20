@@ -66,6 +66,18 @@ nft -f /etc/nftables.nft 2>/dev/null || systemctl reload nftables 2>/dev/null ||
 echo "==> Initializing Waydroid ($SYSTEM_TYPE)..."
 waydroid init -s "$SYSTEM_TYPE" -f
 
+
+echo "==> Installing Android init fallback route overlay (for kernels without IP_MULTIPLE_TABLES)..."
+mkdir -p /var/lib/waydroid/overlay/vendor/etc/init
+cat > /var/lib/waydroid/overlay/vendor/etc/init/s22-waydroid-route.rc << 'RC'
+on property:sys.boot_completed=1
+    exec - root root -- /system/bin/sh -c "for i in 1 2 3 4 5 6 7 8 9 10; do ip addr show eth0 | grep -q '192.168.240.' && ip route replace default via 192.168.240.1 dev eth0 && break; sleep 1; done"
+RC
+chmod 0644 /var/lib/waydroid/overlay/vendor/etc/init/s22-waydroid-route.rc
+
+echo "==> Installing KWin-bound waydroid-session.service user unit..."
+install -D -m 0644 "$PC/etc/systemd/user/waydroid-session.service" /etc/systemd/user/waydroid-session.service
+
 echo "==> Enabling waydroid-container.service..."
 systemctl enable --now waydroid-container.service
 
